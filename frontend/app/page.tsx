@@ -1,76 +1,377 @@
-// FULL MOCK DEMO - no backend calls.
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 
-type Mode = "Deaf mode" | "Blind mode";
-type Caption = { speaker: string; text: string; tone: "cyan" | "green" };
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-const captions: Caption[] = [
-  { speaker: "Dr. Malik", text: "Velocity is the rate at which displacement changes over time.", tone: "cyan" },
-  { speaker: "Dr. Malik", text: "Notice how the slope of this line tells us the object's velocity.", tone: "green" },
-  { speaker: "Student · row 2", text: "So a steeper line means the cart is moving faster?", tone: "cyan" },
-  { speaker: "Dr. Malik", text: "Exactly. Now let's connect that idea to acceleration.", tone: "green" },
-];
-const signs = ["HELP", "YES", "REPEAT", "QUESTION", "THANK YOU"];
-const translations: Record<string, string> = { HELP: "I need help", YES: "Yes, I understand", REPEAT: "Please repeat that", QUESTION: "I have a question", "THANK YOU": "Thank you" };
-const alerts = [
-  ["⚠", "Fire alarm detected", "10:42:08", "danger"],
-  ["◉", "Bell rang", "10:41:32", "amber"],
-  ["↗", "Name called: Tobi", "10:40:16", "cyan"],
-  ["✦", "Applause", "10:39:04", "green"],
-];
-const scenes = ["Teacher at the whiteboard", "Diagram: triangle with labeled sides", "Someone raised their hand in row 2", "Two students comparing notes"];
-const ocr = [["equation", "v = d/t"], ["equation", "a = (v-u)/t"], ["definition", "velocity = displacement / time"]];
+type ModelStatus = {
+  status?: string;
+  version?: string | null;
+  error?: string | null;
+  fix?: string | null;
+};
 
-function LiveDot() { return <span className="live-dot" aria-hidden="true" />; }
+type Envelope<T> = {
+  ok?: boolean;
+  source?: string;
+  data?: T;
+  error?: string;
+  fix?: string;
+};
 
-export default function Home() {
-  const [mode, setMode] = useState<Mode>("Deaf mode");
-  const [captionIndex, setCaptionIndex] = useState(0);
-  const [captionText, setCaptionText] = useState("");
-  const [signIndex, setSignIndex] = useState(0);
-  const [lastSign, setLastSign] = useState("HELP");
-  const [sceneIndex, setSceneIndex] = useState(0);
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [listening, setListening] = useState(false);
-  const caption = captions[captionIndex];
-  const activeScene = scenes[sceneIndex];
-  const signChips = useMemo(() => signs.map((sign, index) => ({ sign, active: index === signIndex })), [signIndex]);
+type LectureSegment = {
+  text: string;
+  sign_ids?: string[];
+  sign_available?: boolean;
+  fallback_reason?: string | null;
+  captions_only?: boolean;
+  coverage_pct?: number;
+};
 
-  useEffect(() => { const id = window.setInterval(() => setCaptionIndex((n) => (n + 1) % captions.length), 2400); return () => window.clearInterval(id); }, []);
-  useEffect(() => {
-    setCaptionText(""); let n = 0;
-    const id = window.setInterval(() => { n += 1; setCaptionText(caption.text.slice(0, n)); if (n >= caption.text.length) window.clearInterval(id); }, 25);
-    return () => window.clearInterval(id);
-  }, [caption]);
-  useEffect(() => { const id = window.setInterval(() => setSignIndex((n) => (n + 1) % signs.length), 2200); return () => window.clearInterval(id); }, []);
-  useEffect(() => { const id = window.setInterval(() => setSceneIndex((n) => (n + 1) % scenes.length), 2800); return () => window.clearInterval(id); }, []);
-  useEffect(() => { setLastSign(signs[signIndex]); }, [signIndex]);
+type LectureResult = {
+  segments: LectureSegment[];
+  overall_coverage_pct?: number;
+  signed_ratio?: number;
+};
 
-  function ask(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!question.trim() || listening) return;
-    setListening(true); setAnswer("");
-    window.setTimeout(() => { setAnswer(question.toLowerCase().includes("red beaker") ? "On the front lab bench, 2 meters to your left." : "I can see the teacher, the motion diagram, and the front lab bench. Try asking where an object is."); setListening(false); }, 1100);
+type CaptionSegment = { start: number; end: number; text: string };
+type CaptionResult = { transcript?: string; language?: string; segments?: CaptionSegment[] };
+type DescribeResult = { caption?: string; descriptions?: string[] };
+type OcrResult = { text?: string[]; equations?: string[] };
+type SoundResult = { alerts?: { label: string; confidence: number }[] };
+type TtsResult = {
+  text?: string;
+  audio_url?: string;
+  url?: string;
+  audio_base64?: string;
+  sample_rate?: number;
+};
+
+type RequestOptions = RequestInit & { body?: BodyInit | null };
+
+async function request<T>(path: string, options?: RequestOptions): Promise<Envelope<T>> {
+  const response = await fetch(`${API}${path}`, options);
+  const payload = (await response.json().catch(() => ({}))) as Envelope<T>;
+  if (!response.ok || payload.ok === false) {
+    const message = payload.error || `Request failed with status ${response.status}`;
+    throw new Error(payload.fix ? `${message} (${payload.fix})` : message);
   }
-
-  return <main className={`app-shell ${mode === "Deaf mode" ? "theme-deaf" : "theme-blind"}`}>
-    <header className="topbar"><a className="brand" href="#top"><span className="brand-mark"><i /><i /><i /></span><span>CLASS<span>BRIDGE</span></span></a><div className="top-meta"><span className="status"><LiveDot /> LIVE <small>· mock</small></span><span className="session">Physics · Room 204</span><button className="avatar" aria-label="Open profile">TO</button></div></header>
-    <nav className="mode-tabs" role="tablist" aria-label="Accessibility mode"><button className={mode === "Deaf mode" ? "tab active" : "tab"} onClick={() => setMode("Deaf mode")} role="tab" aria-selected={mode === "Deaf mode"}><b>◌</b> Deaf mode <kbd>D</kbd></button><button className={mode === "Blind mode" ? "tab active" : "tab"} onClick={() => setMode("Blind mode")} role="tab" aria-selected={mode === "Blind mode"}><b>◉</b> Blind mode <kbd>B</kbd></button></nav>
-    <section className="hero" id="top"><div><p className="eyebrow"><LiveDot /> ACCESSIBILITY LAYER / 02</p><h1>{mode === "Deaf mode" ? "See the lesson as it happens." : "Hear and understand your surroundings."}</h1><p className="hero-copy">{mode === "Deaf mode" ? "Live captions, sign recognition, and sound alerts keep every moment in view." : "Scene descriptions, board OCR, and voice answers turn the classroom into a clear audio map."}</p></div><div className="stats"><span><strong>98.4%</strong>signal clarity</span><span><strong>04</strong>active streams</span></div></section>
-
-    {mode === "Deaf mode" ? <section className="dashboard deaf" aria-label="Deaf mode dashboard">
-      <article className="panel captions"><Heading kicker={<><LiveDot /> LIVE CAPTIONS</>} title="Classroom transcript" right="10:42:18 AM" /><div className="caption-box"><div className="speaker"><span className={`speaker-dot ${caption.tone}`} /><strong>{caption.speaker}</strong><em>PHYSICS</em></div><p className="caption-text">{captionText}<i className="caret" /></p><div className="wave">{Array.from({ length: 30 }, (_, i) => <i key={i} style={{ height: `${12 + (i * 17) % 32}%` }} />)}</div></div><div className="panel-foot"><span><b /> Streaming · English</span><span>Latency <strong>0.4s</strong></span></div></article>
-      <article className="panel signs"><Heading kicker={<>VISION MODEL <small>98.2%</small></>} title="Sign recognition" right="FRAME 0048" /><div className="sign-stage"><span className="stage-label">CAM 02 / FRONT</span><span className="scan" /><div className="avatar-art"><div className="head"><i /><i /><b /></div><div className="neck" /><div className="torso" /><span className="arm left" /><span className="arm right" /><span className="hand left" /><span className="hand right" /></div><span className="tracking" /><span className="track-label">hands tracked · 2</span></div><div className="chips">{signChips.map(({ sign, active }) => <button key={sign} className={active ? "chip active" : "chip"} onClick={() => setLastSign(sign)}>{sign}</button>)}</div><div className="translation"><b>↳</b><div><label>TRANSLATION OUTPUT</label><strong>“{translations[lastSign]}”</strong></div></div></article>
-      <article className="panel alerts"><Heading kicker="SOUND ENVIRONMENT" title="Alerts & moments" right={<span className="buzz">⌁</span>} /><div className="alert-grid">{alerts.map(([icon, title, time, kind]) => <div className="alert" key={title}><b className={`alert-icon ${kind}`}>{icon}</b><div><strong>{title}</strong><small>Detected by room microphone</small></div><time>{time}</time></div>)}</div><div className="vibration"><span>)))</span><div><b>Buzz enabled</b><small>Device vibration mirrors high-priority alerts</small></div><i /></div></article>
-    </section> : <section className="dashboard blind" aria-label="Blind mode dashboard">
-      <article className="panel scene"><Heading kicker={<><LiveDot /> COMPUTER VISION</>} title="What I see now" right="just now" /><div className="scene-focus"><b /><div><label>SCENE DESCRIPTION</label><h3>{activeScene}</h3><small>Updated automatically · high confidence</small></div><em>96%</em></div><div className="scene-list">{scenes.slice(0, 3).map((item, i) => <div className={i === sceneIndex % 3 ? "scene-row selected" : "scene-row"} key={item}><span>0{i + 1}</span><p>{item}</p><i>›</i></div>)}</div></article>
-      <article className="panel board"><Heading kicker={<>BOARD READER <small className="violet">OCR</small></>} title="Whiteboard text" right="10:41:56 AM" /><div className="board-art"><span>KINEMATICS</span><b>v = d/t</b><strong>a = (v-u)/t</strong><i /></div><div className="ocr-list">{ocr.map(([label, text]) => <div key={text}><span>{label}</span><b>{text}</b><i>✓</i></div>)}</div></article>
-      <article className="panel voice"><Heading kicker="ASK THE ROOM" title="Voice Q&A" right={<span className="voice-icon">◎</span>} /><form onSubmit={ask}><label htmlFor="question">Ask about anything in your surroundings</label><div className="input"><input id="question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Where is the red beaker?" disabled={listening} /><button aria-label="Ask question">↗</button></div></form><div className={listening ? "answer listening" : "answer"}><b>{listening ? "◌" : "✦"}</b><div>{listening ? <><label>LISTENING...</label><p>Scanning the classroom for an answer</p></> : answer ? <><label>ANSWER</label><p>{answer}</p></> : <><label>READY WHEN YOU ARE</label><p>Ask a question to get a visual answer.</p></>}</div></div><button className="repeat" onClick={() => setAnswer("v = d/t — velocity equals displacement divided by time.")}><b>↻</b> Repeat last equation</button></article>
-    </section>}
-    <footer><span><span className="brand-mark small"><i /><i /><i /></span> ClassBridge</span><span>Local mock session · no data leaves this device</span><span>⌘ K <small>shortcuts</small></span></footer>
-  </main>;
+  return payload;
 }
 
-function Heading({ kicker, title, right }: { kicker: React.ReactNode; title: string; right: React.ReactNode }) { return <div className="heading"><div><p>{kicker}</p><h2>{title}</h2></div><span>{right}</span></div>; }
+const prettyModelName: Record<string, string> = {
+  faster_whisper: "Captions · faster-whisper",
+  mediapipe: "Sign recognition · MediaPipe",
+  paddleocr: "Board OCR · PaddleOCR",
+  lavis_blip2: "Image description · BLIP-2",
+  sherpa_onnx: "Text to speech · Sherpa ONNX",
+  yamnet: "Sound alerts · YAMNet",
+};
+
+const buttonStyle = {
+  border: "1px solid #33405a",
+  borderRadius: 9,
+  background: "#18202d",
+  color: "#eef3f8",
+  padding: "10px 14px",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const mutedStyle = { color: "#8995a6", fontSize: 12 };
+const panelStyle = { minWidth: 0 };
+
+export default function Home() {
+  const [health, setHealth] = useState<{ models?: Record<string, ModelStatus> } | null>(null);
+  const [healthState, setHealthState] = useState<"loading" | "ready" | "offline">("loading");
+  const [healthError, setHealthError] = useState("");
+  const [lectureText, setLectureText] = useState("");
+  const [lecture, setLecture] = useState<LectureResult | null>(null);
+  const [lectureBusy, setLectureBusy] = useState(false);
+  const [lectureError, setLectureError] = useState("");
+  const [selectedSegment, setSelectedSegment] = useState(0);
+  const [captionResult, setCaptionResult] = useState<CaptionResult | null>(null);
+  const [captionBusy, setCaptionBusy] = useState(false);
+  const [captionError, setCaptionError] = useState("");
+  const [description, setDescription] = useState<DescribeResult | null>(null);
+  const [describeBusy, setDescribeBusy] = useState(false);
+  const [describeError, setDescribeError] = useState("");
+  const [ocr, setOcr] = useState<OcrResult | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrError, setOcrError] = useState("");
+  const [sound, setSound] = useState<SoundResult | null>(null);
+  const [soundBusy, setSoundBusy] = useState(false);
+  const [soundError, setSoundError] = useState("");
+  const [ttsText, setTtsText] = useState("");
+  const [tts, setTts] = useState<TtsResult | null>(null);
+  const [ttsBusy, setTtsBusy] = useState(false);
+  const [ttsError, setTtsError] = useState("");
+
+  const selected = lecture?.segments[selectedSegment];
+  const ttsAudio = tts?.audio_url || tts?.url || (tts?.audio_base64 ? `data:audio/wav;base64,${tts.audio_base64}` : "");
+  const modelEntries = useMemo(() => Object.entries(health?.models || {}), [health]);
+
+  async function loadHealth() {
+    setHealthState("loading");
+    setHealthError("");
+    try {
+      const payload = await request<{ models?: Record<string, ModelStatus> }>("/api/health");
+      setHealth(payload);
+      setHealthState("ready");
+    } catch (error) {
+      setHealthState("offline");
+      setHealthError(error instanceof Error ? error.message : "Unable to reach the backend.");
+    }
+  }
+
+  async function loadSoundStatus() {
+    setSoundError("");
+    try {
+      const payload = await request<SoundResult>("/api/sound-alerts");
+      setSound(payload.data || {});
+    } catch (error) {
+      setSoundError(error instanceof Error ? error.message : "Sound-alert status request failed.");
+    }
+  }
+
+  useEffect(() => {
+    void loadHealth();
+    void loadSoundStatus();
+  }, []);
+
+  async function submitLecture(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!lectureText.trim()) return;
+    setLectureBusy(true);
+    setLectureError("");
+    try {
+      const payload = await request<LectureResult>("/api/lecture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: lectureText.trim() }),
+      });
+      setLecture(payload.data || { segments: [] });
+      setSelectedSegment(0);
+    } catch (error) {
+      setLectureError(error instanceof Error ? error.message : "Lecture processing failed.");
+    } finally {
+      setLectureBusy(false);
+    }
+  }
+
+  async function uploadCaptions(file: File) {
+    setCaptionBusy(true);
+    setCaptionError("");
+    const form = new FormData();
+    form.append("audio", file);
+    try {
+      const payload = await request<CaptionResult>("/api/captions", { method: "POST", body: form });
+      setCaptionResult(payload.data || {});
+    } catch (error) {
+      setCaptionError(error instanceof Error ? error.message : "Caption transcription failed.");
+    } finally {
+      setCaptionBusy(false);
+    }
+  }
+
+  async function uploadDescription(file: File) {
+    setDescribeBusy(true);
+    setDescribeError("");
+    const form = new FormData();
+    form.append("image", file);
+    try {
+      const payload = await request<DescribeResult>("/api/describe", { method: "POST", body: form });
+      setDescription(payload.data || {});
+    } catch (error) {
+      setDescribeError(error instanceof Error ? error.message : "Image description failed.");
+    } finally {
+      setDescribeBusy(false);
+    }
+  }
+
+  async function uploadOcr(file: File) {
+    setOcrBusy(true);
+    setOcrError("");
+    const form = new FormData();
+    form.append("image", file);
+    try {
+      const payload = await request<OcrResult>("/api/board-ocr", { method: "POST", body: form });
+      setOcr(payload.data || {});
+    } catch (error) {
+      setOcrError(error instanceof Error ? error.message : "Board OCR failed.");
+    } finally {
+      setOcrBusy(false);
+    }
+  }
+
+  async function uploadSound(file: File) {
+    setSoundBusy(true);
+    setSoundError("");
+    const form = new FormData();
+    form.append("audio", file);
+    try {
+      const payload = await request<SoundResult>("/api/sound-alerts", { method: "POST", body: form });
+      setSound(payload.data || {});
+    } catch (error) {
+      setSoundError(error instanceof Error ? error.message : "Sound-alert detection failed.");
+    } finally {
+      setSoundBusy(false);
+    }
+  }
+
+  async function submitTts(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ttsText.trim()) return;
+    setTtsBusy(true);
+    setTtsError("");
+    try {
+      const payload = await request<TtsResult>("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: ttsText.trim() }),
+      });
+      setTts(payload.data || {});
+    } catch (error) {
+      setTtsError(error instanceof Error ? error.message : "Text-to-speech failed.");
+    } finally {
+      setTtsBusy(false);
+    }
+  }
+
+  function fileHandler(handler: (file: File) => void) {
+    return (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) handler(file);
+    };
+  }
+
+  return (
+    <main className="app-shell">
+      <header className="topbar">
+        <a className="brand" href="#top" aria-label="ClassBridge home">
+          <span className="brand-mark"><i /><i /><i /></span>
+          <span>CLASS<span>BRIDGE</span></span>
+        </a>
+        <div className="top-meta">
+          <span className="status"><span className="live-dot" aria-hidden="true" /> API {healthState === "ready" ? "ONLINE" : healthState === "loading" ? "CHECKING" : "OFFLINE"}</span>
+          <span className="session">localhost:8000</span>
+          <button className="avatar" type="button" aria-label="ClassBridge workspace">CB</button>
+        </div>
+      </header>
+
+      <section className="mode-tabs" role="tablist" aria-label="Accessibility workspace">
+        <button className="tab active" type="button" role="tab" aria-selected="true"><b>◉</b> Live workspace <kbd>W</kbd></button>
+        <span style={{ ...mutedStyle, marginLeft: "auto" }}>REAL FASTAPI PIPELINE · {API}</span>
+      </section>
+
+      {healthState === "offline" && (
+        <div role="alert" style={{ marginTop: 16, padding: "13px 16px", border: "1px solid #7d3d44", borderRadius: 10, background: "#32191d", color: "#ffd6d9" }}>
+          <strong>Backend offline.</strong> The workspace cannot reach {API}. Start the FastAPI server on port 8000, then retry the health check. {healthError}
+          <button type="button" onClick={() => void loadHealth()} style={{ ...buttonStyle, marginLeft: 12, padding: "6px 10px" }}>Retry</button>
+        </div>
+      )}
+
+      <section className="hero" id="top">
+        <div>
+          <p className="eyebrow"><span className="live-dot" aria-hidden="true" /> ACCESSIBILITY LAYER / 02</p>
+          <h1>Make every lesson<br />visible and audible.</h1>
+          <p className="hero-copy">A production bridge for captions, sign availability, board text, image context, sound alerts, and speech. Every card below talks to the local FastAPI service.</p>
+        </div>
+        <div className="stats" aria-label="Workspace summary">
+          <span><strong>{lecture?.segments.length ?? 0}</strong> lecture segments</span>
+          <span><strong>{lecture?.overall_coverage_pct ?? 0}%</strong> signed coverage</span>
+          <span><strong>{modelEntries.filter(([, value]) => value.status === "loaded").length}</strong> models loaded</span>
+        </div>
+      </section>
+
+      <section className="dashboard" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }} aria-label="ClassBridge tools">
+        <article className="panel" style={panelStyle}>
+          <div className="heading"><div><p>LECTURE PIPELINE</p><h2>Captions + sign coverage</h2></div><span style={mutedStyle}>POST /api/lecture</span></div>
+          <form onSubmit={submitLecture}>
+            <label htmlFor="lecture-text" style={{ ...mutedStyle, display: "block", marginBottom: 7 }}>Paste lecture text to segment and sign-match</label>
+            <textarea id="lecture-text" value={lectureText} onChange={(event) => setLectureText(event.target.value)} placeholder="The mitochondria make energy. Please repeat the equation." rows={4} style={{ width: "100%", resize: "vertical", border: "1px solid #33405a", borderRadius: 9, background: "#0b1119", color: "#eef3f8", padding: 12 }} />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}><button type="submit" disabled={lectureBusy || !lectureText.trim()} style={{ ...buttonStyle, opacity: lectureBusy || !lectureText.trim() ? 0.5 : 1 }}>{lectureBusy ? "Analyzing…" : "Analyze lecture →"}</button></div>
+          </form>
+          {lectureError && <p role="alert" style={{ color: "#ffb8bd", margin: "12px 0 0" }}>{lectureError}</p>}
+          {lecture && (
+            <>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
+                <span className="status">{lecture.segments.length} segments</span>
+                <span className="status">{lecture.overall_coverage_pct ?? 0}% coverage</span>
+                <span className="status">{Math.round((lecture.signed_ratio ?? 0) * 100)}% signed</span>
+              </div>
+              <div style={{ marginTop: 14, display: "grid", gap: 8 }} aria-label="Lecture timeline">
+                {lecture.segments.map((segment, index) => (
+                  <button key={`${segment.text}-${index}`} type="button" onClick={() => setSelectedSegment(index)} aria-pressed={selectedSegment === index} style={{ textAlign: "left", border: `1px solid ${selectedSegment === index ? "#6be7f7" : "#202a3a"}`, borderRadius: 9, padding: 11, background: selectedSegment === index ? "#142733" : "#0c131c", color: "#eef3f8", cursor: "pointer" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><strong style={{ fontSize: 13 }}>0{index + 1}</strong><span style={{ ...mutedStyle, color: segment.sign_available ? "#a8efb3" : "#ffc66d" }}>{segment.sign_available ? "SIGN AVAILABLE" : "CAPTIONS ONLY"}</span>{segment.captions_only && <span style={{ border: "1px solid #8b6e3c", borderRadius: 5, padding: "2px 5px", color: "#ffd27a", fontSize: 10, fontWeight: 700 }}>VOCAB GAP</span>}<span style={{ ...mutedStyle, marginLeft: "auto" }}>{segment.coverage_pct ?? 0}%</span></div>
+                    <p style={{ margin: "7px 0 0", lineHeight: 1.45 }}>{segment.text}</p>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </article>
+
+        <article className="panel" style={panelStyle}>
+          <div className="heading"><div><p>SIGN TRANSLATION</p><h2>Vocabulary match</h2></div><span style={{ ...mutedStyle, color: "#b69cff" }}>REAL SIGN IDS</span></div>
+          <div className="scene-focus" style={{ minHeight: 170 }}>
+            <b style={{ width: 12, height: 12, borderRadius: "50%", background: "#b69cff", display: "block", flex: "none" }} />
+            <div style={{ minWidth: 0 }}><label style={mutedStyle}>SELECTED CAPTION</label><h3 style={{ margin: "6px 0 3px" }}>{selected?.text || "Run a lecture request to see its sign mapping."}</h3><small style={mutedStyle}>{selected ? `${selected.coverage_pct ?? 0}% coverage · ${selected.sign_available ? "sign available" : "caption fallback"}` : "No live segment selected"}</small></div>
+          </div>
+          <div style={{ marginTop: 15 }}>
+            <label style={mutedStyle}>SIGN IDS FROM BACKEND</label>
+            <div className="chips" style={{ marginTop: 8 }}>
+              {selected?.sign_ids?.length ? selected.sign_ids.map((sign) => <span className="chip active" key={sign}>{sign}</span>) : <span style={mutedStyle}>No sign IDs returned yet.</span>}
+            </div>
+            {selected?.captions_only && <div style={{ marginTop: 14, padding: 12, border: "1px solid #705f36", borderRadius: 8, color: "#ffd27a", background: "#2a2314" }}><strong>Vocabulary gap</strong><br /><span style={mutedStyle}>{selected.fallback_reason || "This segment remains available as captions only."}</span></div>}
+          </div>
+        </article>
+
+        <article className="panel" style={panelStyle}>
+          <div className="heading"><div><p>CAPTIONS INPUT</p><h2>Transcribe classroom audio</h2></div><span style={mutedStyle}>POST /api/captions</span></div>
+          <label style={{ ...buttonStyle, display: "inline-block", opacity: captionBusy ? 0.55 : 1 }}><input type="file" accept="audio/*" disabled={captionBusy} onChange={fileHandler(uploadCaptions)} style={{ display: "none" }} />{captionBusy ? "Transcribing…" : "Choose audio file"}</label>
+          {captionError && <p role="alert" style={{ color: "#ffb8bd" }}>{captionError}</p>}
+          {captionResult && <div style={{ marginTop: 16 }}><p style={{ margin: 0, fontSize: 18 }}>{captionResult.transcript || "No transcript text returned."}</p><p style={{ ...mutedStyle, margin: "7px 0 12px" }}>{captionResult.language || "language not reported"} · {captionResult.segments?.length || 0} returned segments</p><div style={{ display: "grid", gap: 7 }}>{captionResult.segments?.map((segment, index) => <div key={`${segment.start}-${index}`} style={{ display: "flex", gap: 10, borderTop: "1px solid #202a3a", paddingTop: 8 }}><span style={{ ...mutedStyle, width: 75 }}>{segment.start.toFixed(1)}–{segment.end.toFixed(1)}s</span><span>{segment.text}</span></div>)}</div></div>}
+        </article>
+
+        <article className="panel" style={panelStyle}>
+          <div className="heading"><div><p>SCENE CONTEXT</p><h2>Describe an image</h2></div><span style={{ ...mutedStyle, color: "#b69cff" }}>POST /api/describe</span></div>
+          <label style={{ ...buttonStyle, display: "inline-block", opacity: describeBusy ? 0.55 : 1 }}><input type="file" accept="image/*" disabled={describeBusy} onChange={fileHandler(uploadDescription)} style={{ display: "none" }} />{describeBusy ? "Describing…" : "Upload image"}</label>
+          {describeError && <p role="alert" style={{ color: "#ffb8bd" }}>{describeError}</p>}
+          {description && <div className="scene-focus" style={{ marginTop: 15, minHeight: 130 }}><b style={{ width: 12, height: 12, borderRadius: "50%", background: "#b69cff", display: "block", flex: "none" }} /><div><label style={mutedStyle}>MODEL CAPTION</label><h3 style={{ margin: "6px 0", lineHeight: 1.3 }}>{description.caption || "No caption returned."}</h3><small style={mutedStyle}>{description.descriptions?.length || 0} description returned</small></div></div>}
+        </article>
+
+        <article className="panel" style={panelStyle}>
+          <div className="heading"><div><p>BOARD READER</p><h2>Extract equations and lines</h2></div><span style={mutedStyle}>POST /api/board-ocr</span></div>
+          <label style={{ ...buttonStyle, display: "inline-block", opacity: ocrBusy ? 0.55 : 1 }}><input type="file" accept="image/*" disabled={ocrBusy} onChange={fileHandler(uploadOcr)} style={{ display: "none" }} />{ocrBusy ? "Reading…" : "Upload board image"}</label>
+          {ocrError && <p role="alert" style={{ color: "#ffb8bd" }}>{ocrError}</p>}
+          {ocr && <div style={{ marginTop: 15 }}><label style={mutedStyle}>EXTRACTED LINES</label>{ocr.text?.length ? <div className="ocr-list" style={{ marginTop: 8 }}>{ocr.text.map((line, index) => <div key={`${line}-${index}`}><span>LINE {index + 1}</span><b>{line}</b></div>)}</div> : <p style={mutedStyle}>No text lines returned.</p>}{ocr.equations?.length ? <div style={{ marginTop: 12 }}><label style={mutedStyle}>EQUATIONS</label>{ocr.equations.map((equation, index) => <p key={`${equation}-${index}`} style={{ margin: "7px 0", fontFamily: "monospace", color: "#d3e5e0" }}>{equation}</p>)}</div> : null}</div>}
+        </article>
+
+        <article className="panel" style={panelStyle}>
+          <div className="heading"><div><p>SOUND ENVIRONMENT</p><h2>Sound alerts</h2></div><span className="buzz">⌁</span></div>
+          <p style={mutedStyle}>GET /api/sound-alerts checks live YAMNet availability. Upload audio to run detection.</p>
+          <label style={{ ...buttonStyle, display: "inline-block", opacity: soundBusy ? 0.55 : 1 }}><input type="file" accept="audio/*" disabled={soundBusy} onChange={fileHandler(uploadSound)} style={{ display: "none" }} />{soundBusy ? "Detecting…" : "Upload room audio"}</label>
+          {soundError && <p role="alert" style={{ color: "#ffb8bd" }}>{soundError}</p>}
+          {sound?.alerts?.length ? <div className="alert-grid" style={{ marginTop: 14 }}>{sound.alerts.map((alert, index) => <div className="alert" key={`${alert.label}-${index}`}><b className="alert-icon cyan">●</b><div><strong>{alert.label}</strong><small>{Math.round(alert.confidence * 100)}% confidence</small></div></div>)}</div> : sound && !soundError ? <p style={{ ...mutedStyle, marginTop: 14 }}>No alert labels returned by the model.</p> : null}
+        </article>
+
+        <article className="panel" style={{ ...panelStyle, gridColumn: "1 / -1" }}>
+          <div className="heading"><div><p>VOICE OUTPUT</p><h2>Read it back</h2></div><span style={{ ...mutedStyle, color: "#b69cff" }}>POST /api/tts</span></div>
+          <form onSubmit={submitTts} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><input aria-label="Text to speak" value={ttsText} onChange={(event) => setTtsText(event.target.value)} placeholder="Enter text for speech synthesis" style={{ flex: "1 1 280px", minWidth: 0, border: "1px solid #33405a", borderRadius: 9, background: "#0b1119", color: "#eef3f8", padding: 12 }} /><button type="submit" disabled={ttsBusy || !ttsText.trim()} style={{ ...buttonStyle, opacity: ttsBusy || !ttsText.trim() ? 0.5 : 1 }}>{ttsBusy ? "Generating…" : "Generate audio"}</button></form>
+          {ttsError && <p role="alert" style={{ color: "#ffb8bd" }}>{ttsError}</p>}
+          {tts && <div style={{ marginTop: 14 }}>{ttsAudio ? <audio controls src={ttsAudio} style={{ width: "100%" }}>Your browser cannot play this audio.</audio> : <p style={mutedStyle}>The backend returned no audio URL or audio payload.</p>}<p style={{ ...mutedStyle, marginBottom: 0 }}>{tts.sample_rate ? `${tts.sample_rate} Hz · ` : ""}{tts.text || "Speech generated."}</p></div>}
+        </article>
+      </section>
+
+      <section className="panel" style={{ marginTop: 14 }} aria-labelledby="health-heading">
+        <div className="heading"><div><p>RUNTIME STATUS</p><h2 id="health-heading">Backend health and model readiness</h2></div><button type="button" onClick={() => { void loadHealth(); void loadSoundStatus(); }} style={{ ...buttonStyle, padding: "7px 10px" }}>Refresh</button></div>
+        {healthState === "loading" && <p style={mutedStyle}>Checking {API}/api/health…</p>}
+        {healthState === "ready" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 9 }}>{modelEntries.map(([name, value]) => { const isLoaded = value.status === "loaded"; const isError = value.status === "error"; return <div key={name} style={{ border: "1px solid #202a3a", borderRadius: 9, padding: 11, background: "#0d141e" }}><div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: isLoaded ? "#a8efb3" : isError ? "#ff8f97" : "#ffc66d" }} /><strong style={{ fontSize: 12 }}>{prettyModelName[name] || name}</strong></div><p style={{ ...mutedStyle, margin: "7px 0 0", color: isLoaded ? "#a8efb3" : isError ? "#ffb8bd" : "#ffc66d" }}>{value.status || "unknown"}{value.version ? ` · ${value.version}` : ""}</p>{value.error && <p style={{ ...mutedStyle, margin: "5px 0 0", color: "#ffb8bd" }}>{value.error}</p>}{value.fix && <p style={{ ...mutedStyle, margin: "5px 0 0" }}>Fix: {value.fix}</p>}</div>; })}</div>}
+      </section>
+
+      <footer><span><span className="brand-mark small"><i /><i /><i /></span> ClassBridge</span><span>LOCAL API · no classroom media leaves this device</span><span>⌘ <small>SHORTCUTS</small></span></footer>
+    </main>
+  );
+}
