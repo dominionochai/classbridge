@@ -7,7 +7,8 @@ faster-whisper==1.2.1
 sign-language-translator==0.6.1
 
 # Vision and OCR
-mediapipe==1.0.0
+# MediaPipe release pin was not verified from repository metadata; keep unpinned.
+mediapipe
 paddleocr==3.7.0
 paddlepaddle==3.3.1
 

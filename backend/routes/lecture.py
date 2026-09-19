@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from signing.sign_engine import get_vocabulary, translate_segment
+from .utils import model_error_response, model_response
 
 router = APIRouter(tags=["lecture"])
 _WHISPER: Any = None
@@ -86,13 +87,15 @@ def _lecture_response(text: str) -> dict[str, Any]:
         })
     overall = round(sum(item["coverage_pct"] for item in segments) / len(segments), 2) if segments else 0.0
     signed = sum(1 for item in segments if item["sign_available"])
-    return {
-        "ok": True,
-        "source": "model",
-        "segments": segments,
-        "overall_coverage_pct": overall,
-        "signed_ratio": round(signed / len(segments), 2) if segments else 0.0,
-    }
+    return model_response(
+        "model",
+        {
+            "segments": segments,
+            "overall_coverage_pct": overall,
+            "signed_ratio": round(signed / len(segments), 2) if segments else 0.0,
+        },
+        "POST /api/lecture",
+    )
 
 
 @router.get("/lecture/vocab")
@@ -107,13 +110,13 @@ async def lecture(request: Request) -> dict[str, Any]:
         try:
             text = await _transcribe_upload(request)
         except Exception as exc:
-            return {"ok": False, "source": "error", "error": str(exc)}
+            return model_error_response(str(exc), "POST /api/lecture")
     else:
         try:
             payload = await request.json()
         except Exception as exc:
-            return {"ok": False, "source": "error", "error": f"invalid JSON: {exc}"}
+            return model_error_response(f"invalid JSON: {exc}", "POST /api/lecture")
         text = payload.get("text") if isinstance(payload, dict) else None
         if not isinstance(text, str) or not text.strip():
-            return {"ok": False, "source": "error", "error": "JSON body must contain non-empty string 'text'"}
+            return model_error_response("JSON body must contain non-empty string 'text'", "POST /api/lecture")
     return _lecture_response(text)
