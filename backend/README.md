@@ -4,14 +4,14 @@ The backend is a FastAPI service. Heavy model imports and downloads are not perf
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\setup.ps1
-.\.venv\Scripts\python.exe -m pip install -r .\backend\requirements.txt
-.\backend\setup_models.ps1
-Set-Location .\backend
-..\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+.\\setup.ps1
+.\\.venv\\Scripts\\python.exe -m pip install -r .\\backend\\requirements.txt
+.\\backend\\setup_models.ps1
+Set-Location .\\backend
+..\\.venv\\Scripts\\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-`setup_models.ps1` is safe to rerun. It downloads the configured speech and language model assets and prints a status for every asset. Plan for the model downloads before running it on a bandwidth-constrained machine.
+`setup_models.ps1` is safe to rerun. It downloads configured speech and language model assets only when sources are supplied, and prints a status for every asset. Plan for the model weights before running it on a bandwidth-constrained machine.
 
 ## API endpoints
 
@@ -32,8 +32,8 @@ Examples after starting the server:
 ```bash
 curl http://127.0.0.1:8000/api/health
 curl http://127.0.0.1:8000/api/lecture/vocab
-curl -H 'Content-Type: application/json' \
-  -d '{"text":"The mitochondria make energy. Please repeat the equation."}' \
+curl -H 'Content-Type: application/json' \\
+  -d '{"text":"The mitochondria make energy. Please repeat the equation."}' \\
   http://127.0.0.1:8000/api/lecture
 ```
 
@@ -43,14 +43,14 @@ curl -H 'Content-Type: application/json' \
 
 This is deliberately a sign-availability tier, not a claim that the vocabulary is a complete sign-language recognizer.
 
-Audio lecture input is model-only: missing Whisper assets, audio decoding failures, or inference errors return an error response and never fabricate transcript text. Other model endpoints likewise expose their runtime asset status through health and must be fixed with `backend/setup_models.ps1` when unavailable.
+Audio lecture input is model-only: missing model assets, audio decoding failures, or inference errors return an error response and never fabricate transcript text. Other model endpoints likewise expose their runtime asset status through `/api/health` and must be fixed with `backend/setup_models.ps1` when unavailable.
 
 ## Lightweight verification
 
 From `backend/`, use only lightweight checks while iterating:
 
 ```powershell
-..\.venv\Scripts\python.exe -m compileall main.py routers signing
+..\\.venv\\Scripts\\python.exe -m compileall main.py routers signing
 ```
 
 No model download is required for syntax checks.
@@ -64,4 +64,4 @@ From the repository root, run:
 ./sandbox_verify.sh
 ```
 
-The verification script pulls the latest `main`, reuses existing dependencies when available, starts uvicorn, checks `/api/health`, exercises both lecture text paths (including the `vocab_gap` fallback), reports Python/pip and torch status, and cleans up the server. All output is written to `/workspace/outputs/sandbox_verify.log`.
+The verification script pulls the latest `main`, reuses existing dependencies when available, starts uvicorn, checks `/api/health`, exercises both lecture text paths (including the `vocab_gap` fallback), reports Python/pip and runtime status, and cleans up the server. All output is written to `/workspace/outputs/sandbox_verify.log`.

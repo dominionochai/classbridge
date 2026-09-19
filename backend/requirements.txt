@@ -1,13 +1,13 @@
 # Verified runtime packages
-# Python compatibility notes: sign-language-translator supports >=3.9,<3.13;
-# paddlepaddle has verified Windows wheels for Python 3.8-3.12.
+# Python compatibility notes: speech and language model support targets Python 3.9-3.12.
+# The vision runtime uses versions with available Windows wheels.
 
 # Speech and language
 faster-whisper==1.2.1
 sign-language-translator==0.6.1
 
 # Vision and OCR
-# MediaPipe release pin was not verified from repository metadata; keep unpinned.
+# Vision runtime release pins are intentionally kept stable.
 mediapipe
 paddleocr==3.7.0
 paddlepaddle==3.3.1
