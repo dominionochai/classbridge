@@ -27,13 +27,39 @@ def _normalise(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
+def _stem(word: str) -> str:
+    if len(word) > 3 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 3 and word.endswith("es"):
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s"):
+        return word[:-1]
+    return word
+
+
+def _tokens(value: str) -> list[str]:
+    return [_stem(token) for token in _normalise(value).split()]
+
+
+def _has_phrase(haystack: list[str], needle: list[str]) -> bool:
+    width = len(needle)
+    return width > 0 and any(haystack[i:i + width] == needle for i in range(len(haystack) - width + 1))
+
+
 def _answer(question: str, context: str = "") -> dict[str, Any]:
-    searchable = _normalise(f"{question} {context}")
+    # Match on whole-word phrases only, so "meaning" never matches "mean".
+    # The longest matching keyword wins, so "red beaker" outranks "beaker".
+    haystack = _tokens(f"{question} {context}")
+    best: tuple[int, dict[str, Any]] | None = None
     for fact in _facts():
-        keywords = fact.get("keywords", [])
-        if any(_normalise(str(keyword)) in searchable for keyword in keywords):
-            return {"question": question, "answer": str(fact.get("answer", "")), "matched_fact": str(fact.get("id")) if fact.get("id") else None}
-    return {"question": question, "answer": _FALLBACK, "matched_fact": None}
+        for keyword in fact.get("keywords", []):
+            needle = _tokens(str(keyword))
+            if _has_phrase(haystack, needle) and (best is None or len(needle) > best[0]):
+                best = (len(needle), fact)
+    if best is None:
+        return {"question": question, "answer": _FALLBACK, "matched_fact": None}
+    fact = best[1]
+    return {"question": question, "answer": str(fact.get("answer", "")), "matched_fact": str(fact.get("id")) if fact.get("id") else None}
 
 
 def _success(data: dict[str, Any]) -> dict[str, Any]:
@@ -81,7 +107,7 @@ async def get_facts() -> dict[str, Any]:
     return _success({"facts": _facts()})
 
 
-@router.post("/qa")
+@router.post("/qa", response_model=None)
 async def qa(request: Request) -> dict[str, Any] | JSONResponse:
     content_type = request.headers.get("content-type", "").lower()
     try:
