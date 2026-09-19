@@ -1,3 +1,25 @@
-fastapi>=0.115,<1
-uvicorn[standard]>=0.30,<1
-python-dotenv>=1.0,<2
+# Verified runtime packages
+# Python compatibility notes: sign-language-translator supports >=3.9,<3.13;
+# paddlepaddle has verified Windows wheels for Python 3.8-3.12.
+# No broader Windows compatibility is claimed here.
+
+# Speech and language
+faster-whisper==1.2.1
+sign-language-translator==0.6.1
+
+# Vision and OCR
+mediapipe==1.0.0
+paddleocr==3.7.0
+paddlepaddle==3.3.1
+
+# Audio and model runtimes
+sherpa-onnx==1.13.6
+silero-vad==6.2.1
+tensorflow-hub==0.16.1
+
+# Vision-language models
+salesforce-lavis==1.0.2
+
+# torch==2.13.0 and torchvision==0.28.0 were reported, but no compatible
+# Windows/Python 3.10-3.12 pins were verified for this repository, so they
+# are intentionally omitted rather than claiming an unsupported combination.
