@@ -1,10 +1,195 @@
-import {useCallback,useEffect,useRef,useState,type RefObject} from 'react';
-import {BlinkDetector,type BlinkState} from './blinkDetector';
-import {applyCalibration,CALIBRATION_POINTS,fitCalibration,type CalibrationSample} from './calibration';
-import {EmaSmoother,type Point} from './emaSmooth';
-import {GazeEstimator} from './gazeEstimator';
-export type GazeStatus='idle'|'loading'|'tracking'|'calibrating'|'error';
-export type GazeCursor=Point&{visible:boolean};
-export function useGaze(videoRef:RefObject<HTMLVideoElement|null>){const[cameraEnabled,setCameraEnabled]=useState(false),[status,setStatus]=useState<GazeStatus>('idle'),[error,setError]=useState('');const[cursor,setCursor]=useState<GazeCursor>({x:.5,y:.5,visible:false}),[calibrationStep,setCalibrationStep]=useState(-1),[calibrated,setCalibrated]=useState(false),[blink,setBlink]=useState<BlinkState>({leftEar:1,rightEar:1,ear:1,isClosed:false,blinked:false}),[calibrationError,setCalibrationError]=useState<number|null>(null);const step=useRef(-1),started=useRef(0),samples=useRef<CalibrationSample[]>([]),model=useRef<ReturnType<typeof fitCalibration>|null>(null),task=useRef<GazeEstimator|null>(null),stream=useRef<MediaStream|null>(null),frame=useRef<number|null>(null),smooth=useRef(new EmaSmoother()),detector=useRef(new BlinkDetector());
-const startCalibration=useCallback(()=>{if(!cameraEnabled||status==='loading'){setError('Turn on the camera before calibrating.');return;}samples.current=[];model.current=null;smooth.current.reset();step.current=0;started.current=performance.now();setCalibrationStep(0);setCalibrated(false);setCalibrationError(null);setError('');setStatus('calibrating');},[cameraEnabled,status]);
-useEffect(()=>{if(!cameraEnabled){if(frame.current!==null)cancelAnimationFrame(frame.current);stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;task.current?.close();task.current=null;step.current=-1;setCalibrationStep(-1);setCursor(p=>({...p,visible:false}));setStatus('idle');return;}let cancelled=false;async function boot(){setStatus('loading');try{if(!navigator.mediaDevices?.getUserMedia)throw new Error('This browser does not expose camera access.');const[media,tracker]=await Promise.all([navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false}),GazeEstimator.create()]);if(cancelled){media.getTracks().forEach(t=>t.stop());tracker.close();return;}stream.current=media;task.current=tracker;const video=videoRef.current;if(!video)throw new Error('Camera preview is not ready.');video.srcObject=media;video.muted=true;await video.play();setStatus('tracking');const loop=()=>{if(cancelled||!task.current||!videoRef.current||videoRef.current.readyState<2)return;try{const result=task.current.estimate(videoRef.current);if(!result){setCursor(p=>({...p,visible:false}));detector.current.reset();}else{const raw=smooth.current.update(result.raw),point=model.current?applyCalibration(model.current,raw):raw;setCursor({...point,visible:true});setBlink(detector.current.update(result.landmarks));if(step.current>=0){samples.current.push({target:CALIBRATION_POINTS[step.current],gaze:raw});if(performance.now()-started.current>=1200&&samples.current.length>=14){if(step.current===4){const fitted=fitCalibration(samples.current);model.current=fitted;setCalibrationError(fitted.error);setCalibrated(true);step.current=-1;setCalibrationStep(-1);setStatus('tracking');}else{step.current++;started.current=performance.now();samples.current=[];setCalibrationStep(step.current);smooth.current.reset();}}}}}catch(e){setError(e instanceof Error?e.message:'Gaze tracking stopped.');setStatus('error');}frame.current=requestAnimationFrame(loop);};frame.current=requestAnimationFrame(loop);}catch(e){setError(e instanceof Error?e.message:'Unable to start local gaze tracking.');setStatus('error');setCameraEnabled(false);}}void boot();return()=>{cancelled=true;if(frame.current!==null)cancelAnimationFrame(frame.current);stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;task.current?.close();task.current=null;};},[cameraEnabled,videoRef]);return{cameraEnabled,toggleCamera:useCallback(()=>setCameraEnabled(v=>!v),[]),status,error,cursor,blink,calibrated,calibrationStep,calibrationTargets:CALIBRATION_POINTS,startCalibration,calibrationError};}
+'use client';
+
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { BlinkDetector, type BlinkState } from './blinkDetector';
+import { applyCalibration, CALIBRATION_POINTS, fitCalibration, type CalibrationModel, type CalibrationSample } from './calibration';
+import { EmaSmoother } from './emaSmooth';
+import { GazeEstimator } from './gazeEstimator';
+
+export type GazeStatus = 'idle' | 'loading' | 'tracking' | 'no-face' | 'calibrating' | 'error';
+export type GazeCursor = { x: number; y: number; visible: boolean };
+
+const EMPTY_BLINK: BlinkState = { leftEar: 1, rightEar: 1, ear: 1, isClosed: false, blinked: false };
+
+function cameraErrorMessage(error: unknown): string {
+  if (error instanceof DOMException) {
+    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') return 'Camera permission was denied. Allow camera access in your browser settings and try again.';
+    if (error.name === 'NotFoundError') return 'No camera was found on this device.';
+    if (error.name === 'NotReadableError') return 'The camera is busy in another application.';
+    if (error.name === 'SecurityError') return 'Camera access requires HTTPS or localhost.';
+  }
+  if (error instanceof Error) return error.message;
+  return 'Unable to start local gaze tracking.';
+}
+
+export function useGaze(videoRef: RefObject<HTMLVideoElement | null>) {
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [status, setStatus] = useState<GazeStatus>('idle');
+  const [error, setError] = useState('');
+  const [cursor, setCursor] = useState<GazeCursor>({ x: 0.5, y: 0.5, visible: false });
+  const [calibrationStep, setCalibrationStep] = useState(-1);
+  const [calibrated, setCalibrated] = useState(false);
+  const [blink, setBlink] = useState<BlinkState>(EMPTY_BLINK);
+  const [calibrationError, setCalibrationError] = useState<number | null>(null);
+
+  const step = useRef(-1);
+  const startedAt = useRef(0);
+  const samples = useRef<CalibrationSample[]>([]);
+  const model = useRef<CalibrationModel | null>(null);
+  const task = useRef<GazeEstimator | null>(null);
+  const stream = useRef<MediaStream | null>(null);
+  const frame = useRef<number | null>(null);
+  const smoother = useRef(new EmaSmoother());
+  const detector = useRef(new BlinkDetector());
+
+  const startCalibration = useCallback(() => {
+    if (!cameraEnabled || status === 'loading') {
+      setError('Turn on the camera before calibrating.');
+      return;
+    }
+    step.current = 0;
+    startedAt.current = performance.now();
+    samples.current = [];
+    model.current = null;
+    smoother.current.reset();
+    setCalibrationStep(0);
+    setCalibrated(false);
+    setCalibrationError(null);
+    setError('');
+    setStatus('calibrating');
+  }, [cameraEnabled, status]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const stopResources = () => {
+      if (frame.current !== null) {
+        cancelAnimationFrame(frame.current);
+        frame.current = null;
+      }
+      stream.current?.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+      task.current?.close();
+      task.current = null;
+      step.current = -1;
+      setCalibrationStep(-1);
+      setCursor((previous) => ({ ...previous, visible: false }));
+      setBlink(EMPTY_BLINK);
+    };
+
+    const loop = () => {
+      if (cancelled || document.hidden || !task.current || !videoRef.current) return;
+      const video = videoRef.current;
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        frame.current = requestAnimationFrame(loop);
+        return;
+      }
+      try {
+        const result = task.current.estimate(video);
+        if (!result) {
+          detector.current.reset();
+          setBlink(EMPTY_BLINK);
+          setCursor((previous) => ({ ...previous, visible: false }));
+          setStatus(step.current >= 0 ? 'calibrating' : 'no-face');
+        } else {
+          const raw = smoother.current.update(result.raw);
+          const point = model.current ? applyCalibration(model.current, raw) : raw;
+          setCursor({ ...point, visible: true });
+          setBlink(detector.current.update(result.landmarks));
+          setStatus(step.current >= 0 ? 'calibrating' : 'tracking');
+          if (step.current >= 0) samples.current.push({ target: CALIBRATION_POINTS[step.current], gaze: raw });
+        }
+
+        if (step.current >= 0 && performance.now() - startedAt.current >= 1200 && samples.current.length >= 14) {
+          if (step.current === CALIBRATION_POINTS.length - 1) {
+            const fitted = fitCalibration(samples.current);
+            model.current = fitted;
+            setCalibrationError(fitted.error);
+            setCalibrated(true);
+            step.current = -1;
+            setCalibrationStep(-1);
+            setStatus('tracking');
+          } else {
+            step.current += 1;
+            startedAt.current = performance.now();
+            samples.current = [];
+            setCalibrationStep(step.current);
+            smoother.current.reset();
+          }
+        }
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Gaze tracking stopped unexpectedly.');
+        setStatus('error');
+        step.current = -1;
+        setCalibrationStep(-1);
+      }
+      if (!cancelled && !document.hidden) frame.current = requestAnimationFrame(loop);
+    };
+
+    const boot = async () => {
+      setStatus('loading');
+      setError('');
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser does not expose camera access.');
+        const [media, estimator] = await Promise.all([
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }),
+          GazeEstimator.create(),
+        ]);
+        if (cancelled || document.hidden) {
+          media.getTracks().forEach((track) => track.stop());
+          estimator.close();
+          return;
+        }
+        stream.current = media;
+        task.current = estimator;
+        const video = videoRef.current;
+        if (!video) throw new Error('Camera preview is not ready.');
+        video.srcObject = media;
+        video.muted = true;
+        await video.play();
+        if (cancelled) return;
+        setStatus('tracking');
+        frame.current = requestAnimationFrame(loop);
+      } catch (caught) {
+        stopResources();
+        setError(cameraErrorMessage(caught));
+        setStatus('error');
+        setCameraEnabled(false);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopResources();
+        setStatus('idle');
+      } else if (!cancelled && cameraEnabled) {
+        void boot();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (cameraEnabled) void boot();
+    else stopResources();
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      stopResources();
+    };
+  }, [cameraEnabled, videoRef]);
+
+  const toggleCamera = useCallback(() => setCameraEnabled((enabled) => !enabled), []);
+
+  return {
+    cameraEnabled,
+    toggleCamera,
+    status,
+    error,
+    cursor,
+    blink,
+    calibrated,
+    calibrationStep,
+    calibrationTargets: CALIBRATION_POINTS,
+    startCalibration,
+    calibrationError,
+  };
+}
