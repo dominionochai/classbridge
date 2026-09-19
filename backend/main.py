@@ -6,13 +6,19 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routes import board_ocr, captions, describe, sign_in, sound_alerts, tts
+from routes import board_ocr, captions, describe, lecture, sign_in, sound_alerts, tts
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="ClassBridge API", version="0.2.0")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-for module in (captions, sign_in, board_ocr, describe, tts, sound_alerts):
+for module in (captions, sign_in, board_ocr, describe, tts, sound_alerts, lecture):
     app.include_router(module.router, prefix="/api")
 
 
