@@ -1,17 +1,32 @@
+from __future__ import annotations
+
+import logging
+from typing import Any
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routes import captions, sign_in, board_ocr, describe, tts, sound_alerts
+from routes import board_ocr, captions, describe, sign_in, sound_alerts, tts
 
-app = FastAPI(title="ClassBridge API", version="0.1.0")
+logging.basicConfig(level=logging.INFO)
+app = FastAPI(title="ClassBridge API", version="0.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-app.include_router(captions.router, prefix="/api")
-app.include_router(sign_in.router, prefix="/api")
-app.include_router(board_ocr.router, prefix="/api")
-app.include_router(describe.router, prefix="/api")
-app.include_router(tts.router, prefix="/api")
-app.include_router(sound_alerts.router, prefix="/api")
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "mode": "mock", "service": "classbridge"}
+for module in (captions, sign_in, board_ocr, describe, tts, sound_alerts):
+    app.include_router(module.router, prefix="/api")
+
+
+@app.get("/api/health")
+def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "service": "classbridge",
+        "models": {
+            "faster_whisper": captions.model_status_info(),
+            "mediapipe": sign_in.model_status_info(),
+            "paddleocr": board_ocr.model_status_info(),
+            "lavis_blip2": describe.model_status_info(),
+            "sherpa_onnx": tts.model_status_info(),
+            "yamnet": sound_alerts.model_status_info(),
+        },
+    }
