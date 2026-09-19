@@ -1,68 +1,59 @@
 # ClassBridge backend
 
-The FastAPI service keeps heavyweight model imports and downloads lazy. Every request returns the stable envelope `{ "ok": true, "source": "model" | "mock", "data": ... }`; the `source` field is logged and makes degraded operation visible to clients.
+The backend is a FastAPI service. Heavy model imports and downloads are not performed by normal imports. Run the setup in this order from the repository root in PowerShell:
 
-Run from the repository root (with the pinned backend environment installed):
-
-```bash
-cd backend
-uvicorn main:app --reload --port 8000
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\setup.ps1
+.\.venv\Scripts\python.exe -m pip install -r .\backend\requirements.txt
+.\backend\setup_models.ps1
+Set-Location .\backend
+..\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-## Endpoints
+`setup_models.ps1` is safe to rerun. It uses `huggingface_hub.snapshot_download` for faster-whisper tiny/base, Silero VAD, and the sherpa-onnx Piper voice, and a TensorFlow Hub direct archive URL for YAMNet. It prints a status for every asset. The exact sherpa voice source is [csukuangfj/sherpa-onnx-vits-piper-en_US-lessac-medium](https://huggingface.co/csukuangfj/sherpa-onnx-vits-piper-en_US-lessac-medium). Do not run it on a bandwidth-constrained machine without planning for model downloads.
 
-Health and mock-friendly reads:
+## API endpoints
 
-```bash
-curl http://localhost:8000/api/health
-curl http://localhost:8000/api/captions
-curl http://localhost:8000/api/sound-alerts
+All endpoints are prefixed with `/api`.
+
+- `GET /api/health` — service and per-model load status.
+- `GET /api/captions` and `POST /api/captions` — captions; POST accepts a multipart `audio` or `file` upload.
+- `POST /api/lecture` — accepts JSON `{ "text": "..." }`, or multipart `audio=@lecture.wav` / `file=@lecture.wav`; transcribes audio with faster-whisper, splits sentences, and returns sign IDs plus coverage.
+- `GET /api/lecture/vocab` — the checked-in sign vocabulary JSON.
+- `POST /api/sign-in` — multipart `image` or `frame` hand-sign input.
+- `POST /api/board-ocr` — multipart `image` board input.
+- `POST /api/describe` — multipart `image` scene input.
+- `POST /api/tts` — JSON `{ "text": "..." }` speech synthesis.
+- `POST /api/sound-alerts` — multipart `audio` input.
+
+Examples after starting the server:
+
+```powershell
+curl http://127.0.0.1:8000/api/health
+curl http://127.0.0.1:8000/api/lecture/vocab
+curl -H "Content-Type: application/json" -d '{"text":"The mitochondria make energy. Please repeat the equation."}' http://127.0.0.1:8000/api/lecture
+curl -F "audio=@.\lecture.wav" http://127.0.0.1:8000/api/lecture
+curl -F "audio=@.\lecture.wav" http://127.0.0.1:8000/api/captions
+curl -F "image=@.\hand.jpg" http://127.0.0.1:8000/api/sign-in
+curl -F "image=@.\board.jpg" http://127.0.0.1:8000/api/board-ocr
+curl -F "image=@.\scene.jpg" http://127.0.0.1:8000/api/describe
+curl -H "Content-Type: application/json" -d '{"text":"Please repeat the question."}' http://127.0.0.1:8000/api/tts
+curl -F "audio=@.\classroom.wav" http://127.0.0.1:8000/api/sound-alerts
 ```
 
-Upload audio for Whisper captions:
+## Lecture sign-vs-captions tiers
 
-```bash
-curl -F "audio=@lecture.wav" http://localhost:8000/api/captions
+`backend/signing/vocab.json` is the deterministic first tier: each recognized word or phrase yields a sign ID. `translate_segment` returns `coverage_pct`; a segment with an unknown word has `fallback_reason: "vocab_gap"` and `captions_only: true`, so the complete original sentence remains available as captions. Empty/non-token input reports `unknown_word`. The lecture response keeps every sentence, its `sign_ids`, `sign_available`, `fallback_reason`, and `captions_only`, plus `overall_coverage_pct` and `signed_ratio`. This is deliberately a sign-availability tier, not a claim that the vocabulary is a complete sign-language recognizer.
+
+Audio lecture input is a model-only path: a missing faster-whisper asset, audio decoding failure, or inference error returns an error response and never fabricated transcript text. Other model endpoints likewise surface their runtime asset status through health and, when unavailable, must be fixed with `backend/setup_models.ps1`.
+
+## Lightweight verification
+
+From `backend/`, use only lightweight checks when iterating:
+
+```powershell
+..\.venv\Scripts\python.exe -m compileall main.py routes signing
 ```
 
-Upload a camera frame for MediaPipe Hands sign chips:
-
-```bash
-curl -F "image=@hand.jpg" http://localhost:8000/api/sign-in
-```
-
-Upload a board image for PaddleOCR:
-
-```bash
-curl -F "image=@board.jpg" http://localhost:8000/api/board-ocr
-```
-
-Upload a scene image for LAVIS BLIP2:
-
-```bash
-curl -F "image=@classroom.jpg" http://localhost:8000/api/describe
-```
-
-Synthesize speech from JSON:
-
-```bash
-curl -H "Content-Type: application/json" -d '{"text":"Please repeat the question."}' http://localhost:8000/api/tts
-```
-
-Upload a WAV/PCM audio chunk for YAMNet alerts:
-
-```bash
-curl -F "audio=@classroom-audio.wav" http://localhost:8000/api/sound-alerts
-```
-
-## Model behavior and caveats
-
-- `faster-whisper` loads `WhisperModel("tiny")` on the first caption upload. The model download and runtime are required for `source=model`; missing packages, failed downloads, invalid audio, or inference errors return a mock transcript.
-- MediaPipe Hands is loaded on the first sign frame. The built-in vocabulary is `HELP`, `YES`, `NO`, `REPEAT`, `QUESTION`, and `THANK YOU`; the chip classifier is intentionally a small landmark heuristic, not a complete sign-language recognizer. Failed image/model operations return mock chips.
-- PaddleOCR is lazy and extracts recognized text/equations when PaddlePaddle and its model are usable. PaddlePaddle wheel availability can be difficult on Windows/Python combinations.
-- LAVIS BLIP2 is optional and lazy. `torch`/`torchvision` version mismatches or unavailable model downloads are caught and fall back to mock scene descriptions; this is the main reason the pinned file deliberately does not force a torch pair.
-- sherpa-onnx TTS additionally needs local model files. Set `SHERPA_TTS_MODEL`, `SHERPA_TTS_TOKENS`, and optionally `SHERPA_TTS_LEXICON` before the first request. Without them, the response returns the input text with `mock: true`.
-- YAMNet lazily downloads from TensorFlow Hub (`YAMNET_URL` can override the URL). It accepts WAV or raw PCM chunks, maps the YAMNet class map to fire/smoke alarm, bell, siren, and clap, and falls back when TensorFlow, TensorFlow Hub, the download, or decoding is unavailable.
-- `python-multipart`, Pillow, OpenCV, and NumPy are runtime concerns for multipart/image paths. The route modules still import without them; an unavailable optional decoder is handled as a mock response.
-
-The health endpoint reports each adapter as `not-loaded`, `loaded`, or `mock`, plus a package version when it can be discovered. `not-loaded` is expected before the first request because all heavyweight models are intentionally lazy.
+No model download is required for syntax checks.
