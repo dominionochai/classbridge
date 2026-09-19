@@ -5,13 +5,6 @@ import type { ChangeEvent, FormEvent } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-type ModelStatus = {
-  status?: string;
-  version?: string | null;
-  error?: string | null;
-  fix?: string | null;
-};
-
 type Envelope<T> = {
   ok?: boolean;
   source?: string;
@@ -20,6 +13,7 @@ type Envelope<T> = {
   fix?: string;
 };
 
+type ModelStatus = { status?: string; version?: string | null; error?: string | null; fix?: string | null };
 type LectureSegment = {
   text: string;
   sign_ids?: string[];
@@ -28,29 +22,16 @@ type LectureSegment = {
   captions_only?: boolean;
   coverage_pct?: number;
 };
-
-type LectureResult = {
-  segments: LectureSegment[];
-  overall_coverage_pct?: number;
-  signed_ratio?: number;
-};
-
-type CaptionSegment = { start: number; end: number; text: string };
-type CaptionResult = { transcript?: string; language?: string; segments?: CaptionSegment[] };
+type LectureResult = { segments: LectureSegment[]; overall_coverage_pct?: number; signed_ratio?: number };
+type CaptionResult = { transcript?: string; language?: string; segments?: { start: number; end: number; text: string }[] };
 type DescribeResult = { caption?: string; descriptions?: string[] };
 type OcrResult = { text?: string[]; equations?: string[] };
 type SoundResult = { alerts?: { label: string; confidence: number }[] };
-type TtsResult = {
-  text?: string;
-  audio_url?: string;
-  url?: string;
-  audio_base64?: string;
-  sample_rate?: number;
-};
+type TtsResult = { text?: string; audio_url?: string; url?: string; audio_base64?: string; sample_rate?: number };
+type QaData = { question: string; answer: string; matched_fact: string | null };
+type SignInData = { chips?: string[]; translation?: string; landmarks?: unknown[]; hands?: number; vocabulary?: string[] };
 
-type RequestOptions = RequestInit & { body?: BodyInit | null };
-
-async function request<T>(path: string, options?: RequestOptions): Promise<Envelope<T>> {
+async function request<T>(path: string, options?: RequestInit): Promise<Envelope<T>> {
   const response = await fetch(`${API}${path}`, options);
   const payload = (await response.json().catch(() => ({}))) as Envelope<T>;
   if (!response.ok || payload.ok === false) {
@@ -60,38 +41,49 @@ async function request<T>(path: string, options?: RequestOptions): Promise<Envel
   return payload;
 }
 
-const prettyModelName: Record<string, string> = {
-  faster_whisper: "Captions · faster-whisper",
-  mediapipe: "Sign recognition · MediaPipe",
-  paddleocr: "Board OCR · PaddleOCR",
-  lavis_blip2: "Image description · BLIP-2",
-  sherpa_onnx: "Text to speech · Sherpa ONNX",
-  yamnet: "Sound alerts · YAMNet",
-};
+function SigningAvatar({ gloss }: { gloss: string }) {
+  const pose = gloss.replace(/[^A-Z0-9 ]/gi, " ").replace(/\s+/g, " ").trim().toUpperCase();
+  const canonical = pose === "THANK YOU" || pose === "THANK_YOU" ? "THANK_YOU" : pose;
+  const arm = {
+    HELP: <><path d="M56 100 Q30 86 29 58 Q29 43 42 40" /><path d="M88 100 Q108 86 110 61 Q111 46 99 39" /></>,
+    YES: <><path d="M56 100 Q36 89 42 68 L51 54" /><path d="M88 100 Q111 89 102 69 L92 55" /></>,
+    NO: <><path d="M56 100 Q31 82 34 62 Q38 50 53 57" /><path d="M88 100 Q113 82 110 62 Q106 50 91 57" /></>,
+    REPEAT: <><path d="M56 100 Q29 91 38 65 Q45 50 61 54" /><path d="M88 100 Q115 91 106 65 Q99 50 83 54" /></>,
+    QUESTION: <><path d="M56 100 Q35 85 41 62 Q48 46 62 46" /><path d="M88 100 Q105 83 101 61 Q98 48 87 43" /></>,
+    THANK_YOU: <><path d="M56 100 Q39 79 51 61 Q61 51 69 63" /><path d="M88 100 Q101 79 89 61 Q79 51 71 63" /></>,
+  }[canonical as "HELP" | "YES" | "NO" | "REPEAT" | "QUESTION" | "THANK_YOU"] || <><path d="M56 100 Q35 84 42 61" /><path d="M88 100 Q109 84 102 61" /></>;
 
-const buttonStyle = {
-  border: "1px solid #33405a",
-  borderRadius: 9,
-  background: "#18202d",
-  color: "#eef3f8",
-  padding: "10px 14px",
-  fontWeight: 700,
-  cursor: "pointer",
-};
+  return (
+    <div aria-label={`Signing avatar pose ${pose || "waiting"}`} style={{ display: "grid", gap: 8, justifyItems: "center" }}>
+      <svg role="img" viewBox="0 0 144 132" width="190" height="170" aria-hidden="true">
+        <rect x="4" y="4" width="136" height="124" rx="18" fill="#101c32" stroke="#6be7d8" strokeWidth="2" />
+        <circle cx="72" cy="39" r="20" fill="#ffd6b3" />
+        <path d="M49 38 Q72 10 95 38 Q90 22 72 20 Q54 22 49 38" fill="#b69cff" />
+        <circle cx="65" cy="40" r="2.5" fill="#101c32" /><circle cx="79" cy="40" r="2.5" fill="#101c32" />
+        <path d="M65 49 Q72 54 79 49" fill="none" stroke="#101c32" strokeWidth="2" strokeLinecap="round" />
+        <path d="M52 72 Q72 60 92 72 L99 112 L45 112 Z" fill="#6be7d8" />
+        <g fill="none" stroke="#ffd6b3" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round">{arm}</g>
+        <text x="72" y="122" textAnchor="middle" fill="#101c32" fontSize="8" fontWeight="700">{pose || "READY"}</text>
+      </svg>
+      <strong>Avatar signing: {pose || "READY"}</strong>
+    </div>
+  );
+}
 
-const mutedStyle = { color: "#8995a6", fontSize: 12 };
-const panelStyle = { minWidth: 0 };
+const buttonStyle = { border: "1px solid #33405a", borderRadius: 9, background: "#18202d", color: "#eef3f8", padding: "10px 14px", fontWeight: 700, cursor: "pointer" };
+const muted = { color: "#8995a6", fontSize: 12 };
+const panel = { minWidth: 0, border: "1px solid #202a3a", borderRadius: 12, padding: 16, background: "#0d141e" };
 
 export default function Home() {
-  const [health, setHealth] = useState<{ models?: Record<string, ModelStatus> } | null>(null);
-  const [healthState, setHealthState] = useState<"loading" | "ready" | "offline">("loading");
+  const [health, setHealth] = useState<ModelStatus | null>(null);
+  const [healthState, setHealthState] = useState("loading");
   const [healthError, setHealthError] = useState("");
   const [lectureText, setLectureText] = useState("");
   const [lecture, setLecture] = useState<LectureResult | null>(null);
   const [lectureBusy, setLectureBusy] = useState(false);
   const [lectureError, setLectureError] = useState("");
   const [selectedSegment, setSelectedSegment] = useState(0);
-  const [captionResult, setCaptionResult] = useState<CaptionResult | null>(null);
+  const [caption, setCaption] = useState<CaptionResult | null>(null);
   const [captionBusy, setCaptionBusy] = useState(false);
   const [captionError, setCaptionError] = useState("");
   const [description, setDescription] = useState<DescribeResult | null>(null);
@@ -107,271 +99,125 @@ export default function Home() {
   const [tts, setTts] = useState<TtsResult | null>(null);
   const [ttsBusy, setTtsBusy] = useState(false);
   const [ttsError, setTtsError] = useState("");
+  const [qaQuestion, setQaQuestion] = useState("");
+  const [qaAudio, setQaAudio] = useState<File | null>(null);
+  const [qa, setQa] = useState<QaData | null>(null);
+  const [qaBusy, setQaBusy] = useState(false);
+  const [qaError, setQaError] = useState("");
+  const [signImage, setSignImage] = useState<File | null>(null);
+  const [signIn, setSignIn] = useState<SignInData | null>(null);
+  const [signBusy, setSignBusy] = useState(false);
+  const [signError, setSignError] = useState("");
 
   const selected = lecture?.segments[selectedSegment];
-  const ttsAudio = tts?.audio_url || tts?.url || (tts?.audio_base64 ? `data:audio/wav;base64,${tts.audio_base64}` : "");
   const modelEntries = useMemo(() => Object.entries(health?.models || {}), [health]);
 
   async function loadHealth() {
-    setHealthState("loading");
-    setHealthError("");
-    try {
-      const payload = await request<{ models?: Record<string, ModelStatus> }>("/api/health");
-      setHealth(payload);
-      setHealthState("ready");
-    } catch (error) {
-      setHealthState("offline");
-      setHealthError(error instanceof Error ? error.message : "Unable to reach the backend.");
-    }
+    setHealthState("loading"); setHealthError("");
+    try { const payload = await request<ModelStatus>("/api/health"); setHealth(payload.data || payload); setHealthState("ready"); }
+    catch (error) { setHealthState("offline"); setHealthError(error instanceof Error ? error.message : "Unable to reach the backend."); }
   }
-
   async function loadSoundStatus() {
     setSoundError("");
-    try {
-      const payload = await request<SoundResult>("/api/sound-alerts");
-      setSound(payload.data || {});
-    } catch (error) {
-      setSoundError(error instanceof Error ? error.message : "Sound-alert status request failed.");
-    }
+    try { const payload = await request<SoundResult>("/api/sound-alerts"); setSound(payload.data || {}); }
+    catch (error) { setSoundError(error instanceof Error ? error.message : "Sound-alert status failed."); }
   }
-
-  useEffect(() => {
-    void loadHealth();
-    void loadSoundStatus();
-  }, []);
+  useEffect(() => { void loadHealth(); void loadSoundStatus(); }, []);
 
   async function submitLecture(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!lectureText.trim()) return;
-    setLectureBusy(true);
-    setLectureError("");
-    try {
-      const payload = await request<LectureResult>("/api/lecture", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: lectureText.trim() }),
-      });
-      setLecture(payload.data || { segments: [] });
-      setSelectedSegment(0);
-    } catch (error) {
-      setLectureError(error instanceof Error ? error.message : "Lecture processing failed.");
-    } finally {
-      setLectureBusy(false);
-    }
+    event.preventDefault(); if (!lectureText.trim()) return; setLectureBusy(true); setLectureError("");
+    try { const payload = await request<LectureResult>("/api/lecture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: lectureText.trim() }) }); setLecture(payload.data || { segments: [] }); setSelectedSegment(0); }
+    catch (error) { setLectureError(error instanceof Error ? error.message : "Lecture processing failed."); }
+    finally { setLectureBusy(false); }
   }
-
   async function uploadCaptions(file: File) {
-    setCaptionBusy(true);
-    setCaptionError("");
-    const form = new FormData();
-    form.append("audio", file);
-    try {
-      const payload = await request<CaptionResult>("/api/captions", { method: "POST", body: form });
-      setCaptionResult(payload.data || {});
-    } catch (error) {
-      setCaptionError(error instanceof Error ? error.message : "Caption transcription failed.");
-    } finally {
-      setCaptionBusy(false);
-    }
+    setCaptionBusy(true); setCaptionError(""); const form = new FormData(); form.append("audio", file);
+    try { const payload = await request<CaptionResult>("/api/captions", { method: "POST", body: form }); setCaption(payload.data || {}); }
+    catch (error) { setCaptionError(error instanceof Error ? error.message : "Caption transcription failed."); }
+    finally { setCaptionBusy(false); }
   }
-
   async function uploadDescription(file: File) {
-    setDescribeBusy(true);
-    setDescribeError("");
-    const form = new FormData();
-    form.append("image", file);
-    try {
-      const payload = await request<DescribeResult>("/api/describe", { method: "POST", body: form });
-      setDescription(payload.data || {});
-    } catch (error) {
-      setDescribeError(error instanceof Error ? error.message : "Image description failed.");
-    } finally {
-      setDescribeBusy(false);
-    }
+    setDescribeBusy(true); setDescribeError(""); const form = new FormData(); form.append("image", file);
+    try { const payload = await request<DescribeResult>("/api/describe", { method: "POST", body: form }); setDescription(payload.data || {}); }
+    catch (error) { setDescribeError(error instanceof Error ? error.message : "Image description failed."); }
+    finally { setDescribeBusy(false); }
   }
-
   async function uploadOcr(file: File) {
-    setOcrBusy(true);
-    setOcrError("");
-    const form = new FormData();
-    form.append("image", file);
-    try {
-      const payload = await request<OcrResult>("/api/board-ocr", { method: "POST", body: form });
-      setOcr(payload.data || {});
-    } catch (error) {
-      setOcrError(error instanceof Error ? error.message : "Board OCR failed.");
-    } finally {
-      setOcrBusy(false);
-    }
+    setOcrBusy(true); setOcrError(""); const form = new FormData(); form.append("image", file);
+    try { const payload = await request<OcrResult>("/api/board-ocr", { method: "POST", body: form }); setOcr(payload.data || {}); }
+    catch (error) { setOcrError(error instanceof Error ? error.message : "Board OCR failed."); }
+    finally { setOcrBusy(false); }
   }
-
   async function uploadSound(file: File) {
-    setSoundBusy(true);
-    setSoundError("");
-    const form = new FormData();
-    form.append("audio", file);
-    try {
-      const payload = await request<SoundResult>("/api/sound-alerts", { method: "POST", body: form });
-      setSound(payload.data || {});
-    } catch (error) {
-      setSoundError(error instanceof Error ? error.message : "Sound-alert detection failed.");
-    } finally {
-      setSoundBusy(false);
-    }
+    setSoundBusy(true); setSoundError(""); const form = new FormData(); form.append("audio", file);
+    try { const payload = await request<SoundResult>("/api/sound-alerts", { method: "POST", body: form }); setSound(payload.data || {}); }
+    catch (error) { setSoundError(error instanceof Error ? error.message : "Sound-alert detection failed."); }
+    finally { setSoundBusy(false); }
   }
-
   async function submitTts(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!ttsText.trim()) return;
-    setTtsBusy(true);
-    setTtsError("");
+    event.preventDefault(); if (!ttsText.trim()) return; setTtsBusy(true); setTtsError("");
+    try { const payload = await request<TtsResult>("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: ttsText.trim() }) }); setTts(payload.data || {}); }
+    catch (error) { setTtsError(error instanceof Error ? error.message : "Text-to-speech failed."); }
+    finally { setTtsBusy(false); }
+  }
+  async function submitQa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!qaQuestion.trim() && !qaAudio) return; setQaBusy(true); setQaError("");
     try {
-      const payload = await request<TtsResult>("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: ttsText.trim() }),
-      });
-      setTts(payload.data || {});
-    } catch (error) {
-      setTtsError(error instanceof Error ? error.message : "Text-to-speech failed.");
-    } finally {
-      setTtsBusy(false);
-    }
+      const options: RequestInit = { method: "POST" };
+      if (qaAudio) { const form = new FormData(); form.append("audio", qaAudio); form.append("question", qaQuestion.trim()); options.body = form; }
+      else { options.headers = { "Content-Type": "application/json" }; options.body = JSON.stringify({ question: qaQuestion.trim() }); }
+      const payload = await request<QaData>("/api/qa", options); setQa(payload.data || null);
+    } catch (error) { setQaError(error instanceof Error ? error.message : "Voice Q&A failed."); }
+    finally { setQaBusy(false); }
   }
+  async function submitSignIn(file: File) {
+    setSignBusy(true); setSignError(""); const form = new FormData(); form.append("image", file);
+    try { const payload = await request<SignInData>("/api/sign-in", { method: "POST", body: form }); setSignIn(payload.data || {}); }
+    catch (error) { setSignError(error instanceof Error ? error.message : "Sign recognition failed."); }
+    finally { setSignBusy(false); }
+  }
+  function fileHandler(handler: (file: File) => void) { return (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) handler(file); }; }
 
-  function fileHandler(handler: (file: File) => void) {
-    return (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (file) handler(file);
-    };
-  }
+  const gloss = selected?.sign_ids?.[selected.sign_ids.length - 1] || "";
+  const signingPaused = Boolean(selected?.captions_only || !selected?.sign_available);
+  const ttsAudio = tts?.audio_url || tts?.url || (tts?.audio_base64 ? `data:audio/wav;base64,${tts.audio_base64}` : "");
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="ClassBridge home">
-          <span className="brand-mark"><i /><i /><i /></span>
-          <span>CLASS<span>BRIDGE</span></span>
-        </a>
-        <div className="top-meta">
-          <span className="status"><span className="live-dot" aria-hidden="true" /> API {healthState === "ready" ? "ONLINE" : healthState === "loading" ? "CHECKING" : "OFFLINE"}</span>
-          <span className="session">localhost:8000</span>
-          <button className="avatar" type="button" aria-label="ClassBridge workspace">CB</button>
-        </div>
+    <main style={{ minHeight: "100vh", background: "#08101b", color: "#eef3f8", padding: "24px max(18px, 4vw)", fontFamily: "system-ui, sans-serif" }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 20, borderBottom: "1px solid #202a3a", paddingBottom: 18 }}>
+        <strong style={{ letterSpacing: 2 }}>CLASS<span style={{ color: "#6be7d8" }}>BRIDGE</span></strong><span style={muted}>Accessibility workspace</span>
+        <span style={{ marginLeft: "auto", ...muted }}>{healthState === "ready" ? "API ONLINE" : healthState === "loading" ? "CHECKING" : "API OFFLINE"} · {API}</span>
       </header>
+      {healthState === "offline" && <div role="alert" style={{ margin: "16px 0", padding: 14, border: "1px solid #7d3d44", borderRadius: 10, color: "#ffd6d9" }}>Backend offline: {healthError}<button type="button" onClick={() => void loadHealth()} style={{ ...buttonStyle, marginLeft: 12, padding: "6px 10px" }}>Retry</button></div>}
+      <section style={{ padding: "44px 0 26px", maxWidth: 850 }}><p style={{ color: "#6be7d8", letterSpacing: 2 }}>ACCESSIBILITY LAYER / 02</p><h1 style={{ fontSize: "clamp(2rem, 5vw, 4.5rem)", lineHeight: 1.02, margin: "10px 0" }}>Make every lesson visible and audible.</h1><p style={{ color: "#a8b4c4", fontSize: 18 }}>ClassBridge connects live captions, sign vocabulary, board text, image context, sound alerts, speech, and classroom Q&A to the local FastAPI models.</p></section>
 
-      <section className="mode-tabs" role="tablist" aria-label="Accessibility workspace">
-        <button className="tab active" type="button" role="tab" aria-selected="true"><b>◉</b> Live workspace <kbd>W</kbd></button>
-        <span style={{ ...mutedStyle, marginLeft: "auto" }}>REAL FASTAPI PIPELINE · {API}</span>
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(310px, 1fr))", gap: 14 }} aria-label="ClassBridge tools">
+        <article style={panel}>
+          <p style={muted}>LECTURE PIPELINE</p><h2>Captions + sign coverage</h2><span style={muted}>POST /api/lecture</span>
+          <form onSubmit={submitLecture}><label htmlFor="lecture-text" style={{ ...muted, display: "block", margin: "12px 0 6px" }}>Paste lecture text</label><textarea id="lecture-text" value={lectureText} onChange={(event) => setLectureText(event.target.value)} rows={4} placeholder="Paste a lesson or equation to segment and sign-match." style={{ width: "100%", boxSizing: "border-box", resize: "vertical", border: "1px solid #33405a", borderRadius: 9, background: "#0b1119", color: "#eef3f8", padding: 12 }} /><button type="submit" disabled={lectureBusy || !lectureText.trim()} style={{ ...buttonStyle, marginTop: 10, opacity: lectureBusy || !lectureText.trim() ? .5 : 1 }}>{lectureBusy ? "Analyzing…" : "Analyze lecture"}</button></form>
+          {lectureError && <p role="alert" style={{ color: "#ffb8bd" }}>{lectureError}</p>}
+          {lecture && <div style={{ marginTop: 16 }}><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><span style={muted}>{lecture.segments.length} segments</span><span style={muted}>{lecture.overall_coverage_pct ?? 0}% coverage</span><span style={muted}>{Math.round((lecture.signed_ratio ?? 0) * 100)}% signed</span></div><div style={{ display: "grid", gap: 8, marginTop: 12 }}>{lecture.segments.map((segment, index) => <button key={`${segment.text}-${index}`} type="button" onClick={() => setSelectedSegment(index)} aria-pressed={selectedSegment === index} style={{ textAlign: "left", border: `1px solid ${selectedSegment === index ? "#6be7d8" : "#202a3a"}`, borderRadius: 9, padding: 11, background: selectedSegment === index ? "#142733" : "#0c131c", color: "#eef3f8" }}><strong>{index + 1}. </strong>{segment.text}<div style={{ ...muted, marginTop: 5 }}>{segment.sign_available ? "SIGN AVAILABLE" : "CAPTIONS ONLY"} · {segment.coverage_pct ?? 0}%</div></button>)}</div></div>}
+        </article>
+
+        <article style={panel}><p style={muted}>DEAF SIGNING</p><h2>Inline signing avatar</h2><span style={muted}>Driven by lecture sign_ids</span><div style={{ marginTop: 18, minHeight: 230, display: "grid", placeItems: "center" }}>{selected && !signingPaused ? <SigningAvatar gloss={gloss} /> : selected ? <div style={{ textAlign: "center" }}><SigningAvatar gloss="" /><strong style={{ display: "block", color: "#ffd27a" }}>signing paused — captions only</strong></div> : <p style={muted}>Run a lecture request to see its sign mapping.</p>}</div>{selected && <><p style={{ color: signingPaused ? "#ffd27a" : "#6be7d8", fontWeight: 700 }}>Avatar signing: {gloss || "CAPTIONS ONLY"}</p><p style={muted}>{selected.text}</p><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{selected.sign_ids?.map((sign) => <span key={sign} style={{ border: "1px solid #33405a", borderRadius: 99, padding: "3px 8px", fontSize: 12 }}>{sign}</span>)}</div></>}</article>
+
+        <article style={panel}><p style={muted}>CAPTIONS INPUT</p><h2>Transcribe classroom audio</h2><span style={muted}>POST /api/captions</span><label style={{ ...buttonStyle, display: "inline-block", marginTop: 14, opacity: captionBusy ? .55 : 1 }}><input type="file" accept="audio/*" disabled={captionBusy} onChange={fileHandler(uploadCaptions)} style={{ display: "none" }} />{captionBusy ? "Transcribing…" : "Choose audio file"}</label>{captionError && <p role="alert" style={{ color: "#ffb8bd" }}>{captionError}</p>}{caption && <div style={{ marginTop: 14 }}><p style={{ fontSize: 18 }}>{caption.transcript || "No transcript returned."}</p><p style={muted}>{caption.language || "Language not reported"} · {caption.segments?.length || 0} returned segments</p></div>}</article>
+
+        <article style={panel}><p style={muted}>SCENE CONTEXT</p><h2>Describe an image</h2><span style={muted}>POST /api/describe</span><label style={{ ...buttonStyle, display: "inline-block", marginTop: 14, opacity: describeBusy ? .55 : 1 }}><input type="file" accept="image/*" disabled={describeBusy} onChange={fileHandler(uploadDescription)} style={{ display: "none" }} />{describeBusy ? "Describing…" : "Upload image"}</label>{describeError && <p role="alert" style={{ color: "#ffb8bd" }}>{describeError}</p>}{description && <div style={{ marginTop: 14 }}><p style={{ fontSize: 18 }}>{description.caption || "No caption returned."}</p><p style={muted}>{description.descriptions?.length || 0} descriptions returned</p></div>}</article>
+
+        <article style={panel}><p style={muted}>BOARD READER</p><h2>Extract equations and lines</h2><span style={muted}>POST /api/board-ocr</span><label style={{ ...buttonStyle, display: "inline-block", marginTop: 14, opacity: ocrBusy ? .55 : 1 }}><input type="file" accept="image/*" disabled={ocrBusy} onChange={fileHandler(uploadOcr)} style={{ display: "none" }} />{ocrBusy ? "Reading…" : "Upload board image"}</label>{ocrError && <p role="alert" style={{ color: "#ffb8bd" }}>{ocrError}</p>}{ocr && <div style={{ marginTop: 14 }}><label style={muted}>EXTRACTED LINES</label>{ocr.text?.length ? <div style={{ display: "grid", gap: 5, marginTop: 8 }}>{ocr.text.map((line, index) => <div key={`${line}-${index}`}><span style={muted}>LINE {index + 1} </span><b>{line}</b></div>)}</div> : <p style={muted}>No text lines returned.</p>}{ocr.equations?.map((equation) => <p key={equation} style={{ fontFamily: "monospace", color: "#d3e5e0" }}>{equation}</p>)}</div>}</article>
+
+        <article style={panel}><p style={muted}>SOUND ENVIRONMENT</p><h2>Sound alerts</h2><span style={muted}>GET/POST /api/sound-alerts</span><p style={muted}>Detect classroom sounds for Deaf and hard-of-hearing learners.</p><label style={{ ...buttonStyle, display: "inline-block", marginTop: 4, opacity: soundBusy ? .55 : 1 }}><input type="file" accept="audio/*" disabled={soundBusy} onChange={fileHandler(uploadSound)} style={{ display: "none" }} />{soundBusy ? "Detecting…" : "Upload room audio"}</label>{soundError && <p role="alert" style={{ color: "#ffb8bd" }}>{soundError}</p>}{sound?.alerts?.length ? <div style={{ display: "grid", gap: 8, marginTop: 14 }}>{sound.alerts.map((alert, index) => <div key={`${alert.label}-${index}`} style={{ border: "1px solid #33405a", borderRadius: 9, padding: 10 }}><b>{alert.label}</b><div style={muted}>{Math.round(alert.confidence * 100)}% confidence</div></div>)}</div> : sound && <p style={muted}>No alert labels returned.</p>}</article>
+
+        <article style={{ ...panel, gridColumn: "1 / -1" }}><p style={muted}>BLIND VOICE Q&A</p><h2>Ask the classroom facts service</h2><span style={muted}>POST /api/qa · JSON or multipart audio</span><form onSubmit={submitQa} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}><input aria-label="Voice Q&A question" value={qaQuestion} onChange={(event) => setQaQuestion(event.target.value)} placeholder="Type or transcribe a classroom question" style={{ flex: "1 1 280px", minWidth: 0, border: "1px solid #33405a", borderRadius: 9, background: "#0b1119", color: "#eef3f8", padding: 12 }} /><label style={{ ...buttonStyle, opacity: qaBusy ? .55 : 1 }}><input type="file" accept="audio/*" disabled={qaBusy} onChange={(event) => setQaAudio(event.target.files?.[0] || null)} style={{ display: "none" }} />{qaAudio ? qaAudio.name : "Optional audio"}</label><button type="submit" disabled={qaBusy || (!qaQuestion.trim() && !qaAudio)} style={{ ...buttonStyle, opacity: qaBusy || (!qaQuestion.trim() && !qaAudio) ? .5 : 1 }}>{qaBusy ? "Asking…" : "Ask voice Q&A"}</button></form>{qaError && <p role="alert" style={{ color: "#ffb8bd" }}>{qaError}</p>}{qa && <div style={{ marginTop: 16, borderTop: "1px solid #202a3a", paddingTop: 12 }}><p style={{ margin: 0, color: "#6be7d8" }}>{qa.question}</p><p style={{ fontSize: 20, margin: "8px 0" }}>{qa.answer}</p><small style={muted}>Matched fact: {qa.matched_fact || "none"}</small></div>}</article>
+
+        <article style={panel}><p style={muted}>DEAF SIGN-IN</p><h2>Recognize a signed image</h2><span style={muted}>POST /api/sign-in · FormData image</span><label style={{ ...buttonStyle, display: "inline-block", marginTop: 14, opacity: signBusy ? .55 : 1 }}><input type="file" accept="image/*" disabled={signBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) { setSignImage(file); void submitSignIn(file); } }} style={{ display: "none" }} />{signBusy ? "Recognizing…" : signImage ? signImage.name : "Upload sign image"}</label>{signError && <p role="alert" style={{ color: "#ffb8bd" }}>{signError}</p>}{signIn && <div style={{ marginTop: 14 }}><p><strong>Recognized sign:</strong> {signIn.chips?.join(", ") || "No sign returned."}</p><p><strong>Translation:</strong> {signIn.translation || signIn.chips?.join(" ") || "No translation returned."}</p></div>}</article>
+
+        <article style={panel}><p style={muted}>VOICE OUTPUT</p><h2>Read it back</h2><span style={muted}>POST /api/tts</span><form onSubmit={submitTts} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}><input aria-label="Text to speak" value={ttsText} onChange={(event) => setTtsText(event.target.value)} placeholder="Enter text for speech synthesis" style={{ flex: "1 1 220px", minWidth: 0, border: "1px solid #33405a", borderRadius: 9, background: "#0b1119", color: "#eef3f8", padding: 12 }} /><button type="submit" disabled={ttsBusy || !ttsText.trim()} style={{ ...buttonStyle, opacity: ttsBusy || !ttsText.trim() ? .5 : 1 }}>{ttsBusy ? "Generating…" : "Generate audio"}</button></form>{ttsError && <p role="alert" style={{ color: "#ffb8bd" }}>{ttsError}</p>}{tts && <div style={{ marginTop: 14 }}>{ttsAudio ? <audio controls src={ttsAudio} style={{ width: "100%" }}>Your browser cannot play this audio.</audio> : <p style={muted}>The backend returned no audio URL or payload.</p>}<p style={muted}>{tts.sample_rate ? `${tts.sample_rate} Hz · ` : ""}{tts.text || "Speech generated."}</p></div>}</article>
       </section>
 
-      {healthState === "offline" && (
-        <div role="alert" style={{ marginTop: 16, padding: "13px 16px", border: "1px solid #7d3d44", borderRadius: 10, background: "#32191d", color: "#ffd6d9" }}>
-          <strong>Backend offline.</strong> The workspace cannot reach {API}. Start the FastAPI server on port 8000, then retry the health check. {healthError}
-          <button type="button" onClick={() => void loadHealth()} style={{ ...buttonStyle, marginLeft: 12, padding: "6px 10px" }}>Retry</button>
-        </div>
-      )}
-
-      <section className="hero" id="top">
-        <div>
-          <p className="eyebrow"><span className="live-dot" aria-hidden="true" /> ACCESSIBILITY LAYER / 02</p>
-          <h1>Make every lesson<br />visible and audible.</h1>
-          <p className="hero-copy">A production bridge for captions, sign availability, board text, image context, sound alerts, and speech. Every card below talks to the local FastAPI service.</p>
-        </div>
-        <div className="stats" aria-label="Workspace summary">
-          <span><strong>{lecture?.segments.length ?? 0}</strong> lecture segments</span>
-          <span><strong>{lecture?.overall_coverage_pct ?? 0}%</strong> signed coverage</span>
-          <span><strong>{modelEntries.filter(([, value]) => value.status === "loaded").length}</strong> models loaded</span>
-        </div>
-      </section>
-
-      <section className="dashboard" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }} aria-label="ClassBridge tools">
-        <article className="panel" style={panelStyle}>
-          <div className="heading"><div><p>LECTURE PIPELINE</p><h2>Captions + sign coverage</h2></div><span style={mutedStyle}>POST /api/lecture</span></div>
-          <form onSubmit={submitLecture}>
-            <label htmlFor="lecture-text" style={{ ...mutedStyle, display: "block", marginBottom: 7 }}>Paste lecture text to segment and sign-match</label>
-            <textarea id="lecture-text" value={lectureText} onChange={(event) => setLectureText(event.target.value)} placeholder="The mitochondria make energy. Please repeat the equation." rows={4} style={{ width: "100%", resize: "vertical", border: "1px solid #33405a", borderRadius: 9, background: "#0b1119", color: "#eef3f8", padding: 12 }} />
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}><button type="submit" disabled={lectureBusy || !lectureText.trim()} style={{ ...buttonStyle, opacity: lectureBusy || !lectureText.trim() ? 0.5 : 1 }}>{lectureBusy ? "Analyzing…" : "Analyze lecture →"}</button></div>
-          </form>
-          {lectureError && <p role="alert" style={{ color: "#ffb8bd", margin: "12px 0 0" }}>{lectureError}</p>}
-          {lecture && (
-            <>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
-                <span className="status">{lecture.segments.length} segments</span>
-                <span className="status">{lecture.overall_coverage_pct ?? 0}% coverage</span>
-                <span className="status">{Math.round((lecture.signed_ratio ?? 0) * 100)}% signed</span>
-              </div>
-              <div style={{ marginTop: 14, display: "grid", gap: 8 }} aria-label="Lecture timeline">
-                {lecture.segments.map((segment, index) => (
-                  <button key={`${segment.text}-${index}`} type="button" onClick={() => setSelectedSegment(index)} aria-pressed={selectedSegment === index} style={{ textAlign: "left", border: `1px solid ${selectedSegment === index ? "#6be7f7" : "#202a3a"}`, borderRadius: 9, padding: 11, background: selectedSegment === index ? "#142733" : "#0c131c", color: "#eef3f8", cursor: "pointer" }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><strong style={{ fontSize: 13 }}>0{index + 1}</strong><span style={{ ...mutedStyle, color: segment.sign_available ? "#a8efb3" : "#ffc66d" }}>{segment.sign_available ? "SIGN AVAILABLE" : "CAPTIONS ONLY"}</span>{segment.captions_only && <span style={{ border: "1px solid #8b6e3c", borderRadius: 5, padding: "2px 5px", color: "#ffd27a", fontSize: 10, fontWeight: 700 }}>VOCAB GAP</span>}<span style={{ ...mutedStyle, marginLeft: "auto" }}>{segment.coverage_pct ?? 0}%</span></div>
-                    <p style={{ margin: "7px 0 0", lineHeight: 1.45 }}>{segment.text}</p>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </article>
-
-        <article className="panel" style={panelStyle}>
-          <div className="heading"><div><p>SIGN TRANSLATION</p><h2>Vocabulary match</h2></div><span style={{ ...mutedStyle, color: "#b69cff" }}>REAL SIGN IDS</span></div>
-          <div className="scene-focus" style={{ minHeight: 170 }}>
-            <b style={{ width: 12, height: 12, borderRadius: "50%", background: "#b69cff", display: "block", flex: "none" }} />
-            <div style={{ minWidth: 0 }}><label style={mutedStyle}>SELECTED CAPTION</label><h3 style={{ margin: "6px 0 3px" }}>{selected?.text || "Run a lecture request to see its sign mapping."}</h3><small style={mutedStyle}>{selected ? `${selected.coverage_pct ?? 0}% coverage · ${selected.sign_available ? "sign available" : "caption fallback"}` : "No live segment selected"}</small></div>
-          </div>
-          <div style={{ marginTop: 15 }}>
-            <label style={mutedStyle}>SIGN IDS FROM BACKEND</label>
-            <div className="chips" style={{ marginTop: 8 }}>
-              {selected?.sign_ids?.length ? selected.sign_ids.map((sign) => <span className="chip active" key={sign}>{sign}</span>) : <span style={mutedStyle}>No sign IDs returned yet.</span>}
-            </div>
-            {selected?.captions_only && <div style={{ marginTop: 14, padding: 12, border: "1px solid #705f36", borderRadius: 8, color: "#ffd27a", background: "#2a2314" }}><strong>Vocabulary gap</strong><br /><span style={mutedStyle}>{selected.fallback_reason || "This segment remains available as captions only."}</span></div>}
-          </div>
-        </article>
-
-        <article className="panel" style={panelStyle}>
-          <div className="heading"><div><p>CAPTIONS INPUT</p><h2>Transcribe classroom audio</h2></div><span style={mutedStyle}>POST /api/captions</span></div>
-          <label style={{ ...buttonStyle, display: "inline-block", opacity: captionBusy ? 0.55 : 1 }}><input type="file" accept="audio/*" disabled={captionBusy} onChange={fileHandler(uploadCaptions)} style={{ display: "none" }} />{captionBusy ? "Transcribing…" : "Choose audio file"}</label>
-          {captionError && <p role="alert" style={{ color: "#ffb8bd" }}>{captionError}</p>}
-          {captionResult && <div style={{ marginTop: 16 }}><p style={{ margin: 0, fontSize: 18 }}>{captionResult.transcript || "No transcript text returned."}</p><p style={{ ...mutedStyle, margin: "7px 0 12px" }}>{captionResult.language || "language not reported"} · {captionResult.segments?.length || 0} returned segments</p><div style={{ display: "grid", gap: 7 }}>{captionResult.segments?.map((segment, index) => <div key={`${segment.start}-${index}`} style={{ display: "flex", gap: 10, borderTop: "1px solid #202a3a", paddingTop: 8 }}><span style={{ ...mutedStyle, width: 75 }}>{segment.start.toFixed(1)}–{segment.end.toFixed(1)}s</span><span>{segment.text}</span></div>)}</div></div>}
-        </article>
-
-        <article className="panel" style={panelStyle}>
-          <div className="heading"><div><p>SCENE CONTEXT</p><h2>Describe an image</h2></div><span style={{ ...mutedStyle, color: "#b69cff" }}>POST /api/describe</span></div>
-          <label style={{ ...buttonStyle, display: "inline-block", opacity: describeBusy ? 0.55 : 1 }}><input type="file" accept="image/*" disabled={describeBusy} onChange={fileHandler(uploadDescription)} style={{ display: "none" }} />{describeBusy ? "Describing…" : "Upload image"}</label>
-          {describeError && <p role="alert" style={{ color: "#ffb8bd" }}>{describeError}</p>}
-          {description && <div className="scene-focus" style={{ marginTop: 15, minHeight: 130 }}><b style={{ width: 12, height: 12, borderRadius: "50%", background: "#b69cff", display: "block", flex: "none" }} /><div><label style={mutedStyle}>MODEL CAPTION</label><h3 style={{ margin: "6px 0", lineHeight: 1.3 }}>{description.caption || "No caption returned."}</h3><small style={mutedStyle}>{description.descriptions?.length || 0} description returned</small></div></div>}
-        </article>
-
-        <article className="panel" style={panelStyle}>
-          <div className="heading"><div><p>BOARD READER</p><h2>Extract equations and lines</h2></div><span style={mutedStyle}>POST /api/board-ocr</span></div>
-          <label style={{ ...buttonStyle, display: "inline-block", opacity: ocrBusy ? 0.55 : 1 }}><input type="file" accept="image/*" disabled={ocrBusy} onChange={fileHandler(uploadOcr)} style={{ display: "none" }} />{ocrBusy ? "Reading…" : "Upload board image"}</label>
-          {ocrError && <p role="alert" style={{ color: "#ffb8bd" }}>{ocrError}</p>}
-          {ocr && <div style={{ marginTop: 15 }}><label style={mutedStyle}>EXTRACTED LINES</label>{ocr.text?.length ? <div className="ocr-list" style={{ marginTop: 8 }}>{ocr.text.map((line, index) => <div key={`${line}-${index}`}><span>LINE {index + 1}</span><b>{line}</b></div>)}</div> : <p style={mutedStyle}>No text lines returned.</p>}{ocr.equations?.length ? <div style={{ marginTop: 12 }}><label style={mutedStyle}>EQUATIONS</label>{ocr.equations.map((equation, index) => <p key={`${equation}-${index}`} style={{ margin: "7px 0", fontFamily: "monospace", color: "#d3e5e0" }}>{equation}</p>)}</div> : null}</div>}
-        </article>
-
-        <article className="panel" style={panelStyle}>
-          <div className="heading"><div><p>SOUND ENVIRONMENT</p><h2>Sound alerts</h2></div><span className="buzz">⌁</span></div>
-          <p style={mutedStyle}>GET /api/sound-alerts checks live YAMNet availability. Upload audio to run detection.</p>
-          <label style={{ ...buttonStyle, display: "inline-block", opacity: soundBusy ? 0.55 : 1 }}><input type="file" accept="audio/*" disabled={soundBusy} onChange={fileHandler(uploadSound)} style={{ display: "none" }} />{soundBusy ? "Detecting…" : "Upload room audio"}</label>
-          {soundError && <p role="alert" style={{ color: "#ffb8bd" }}>{soundError}</p>}
-          {sound?.alerts?.length ? <div className="alert-grid" style={{ marginTop: 14 }}>{sound.alerts.map((alert, index) => <div className="alert" key={`${alert.label}-${index}`}><b className="alert-icon cyan">●</b><div><strong>{alert.label}</strong><small>{Math.round(alert.confidence * 100)}% confidence</small></div></div>)}</div> : sound && !soundError ? <p style={{ ...mutedStyle, marginTop: 14 }}>No alert labels returned by the model.</p> : null}
-        </article>
-
-        <article className="panel" style={{ ...panelStyle, gridColumn: "1 / -1" }}>
-          <div className="heading"><div><p>VOICE OUTPUT</p><h2>Read it back</h2></div><span style={{ ...mutedStyle, color: "#b69cff" }}>POST /api/tts</span></div>
-          <form onSubmit={submitTts} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><input aria-label="Text to speak" value={ttsText} onChange={(event) => setTtsText(event.target.value)} placeholder="Enter text for speech synthesis" style={{ flex: "1 1 280px", minWidth: 0, border: "1px solid #33405a", borderRadius: 9, background: "#0b1119", color: "#eef3f8", padding: 12 }} /><button type="submit" disabled={ttsBusy || !ttsText.trim()} style={{ ...buttonStyle, opacity: ttsBusy || !ttsText.trim() ? 0.5 : 1 }}>{ttsBusy ? "Generating…" : "Generate audio"}</button></form>
-          {ttsError && <p role="alert" style={{ color: "#ffb8bd" }}>{ttsError}</p>}
-          {tts && <div style={{ marginTop: 14 }}>{ttsAudio ? <audio controls src={ttsAudio} style={{ width: "100%" }}>Your browser cannot play this audio.</audio> : <p style={mutedStyle}>The backend returned no audio URL or audio payload.</p>}<p style={{ ...mutedStyle, marginBottom: 0 }}>{tts.sample_rate ? `${tts.sample_rate} Hz · ` : ""}{tts.text || "Speech generated."}</p></div>}
-        </article>
-      </section>
-
-      <section className="panel" style={{ marginTop: 14 }} aria-labelledby="health-heading">
-        <div className="heading"><div><p>RUNTIME STATUS</p><h2 id="health-heading">Backend health and model readiness</h2></div><button type="button" onClick={() => { void loadHealth(); void loadSoundStatus(); }} style={{ ...buttonStyle, padding: "7px 10px" }}>Refresh</button></div>
-        {healthState === "loading" && <p style={mutedStyle}>Checking {API}/api/health…</p>}
-        {healthState === "ready" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 9 }}>{modelEntries.map(([name, value]) => { const isLoaded = value.status === "loaded"; const isError = value.status === "error"; return <div key={name} style={{ border: "1px solid #202a3a", borderRadius: 9, padding: 11, background: "#0d141e" }}><div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: isLoaded ? "#a8efb3" : isError ? "#ff8f97" : "#ffc66d" }} /><strong style={{ fontSize: 12 }}>{prettyModelName[name] || name}</strong></div><p style={{ ...mutedStyle, margin: "7px 0 0", color: isLoaded ? "#a8efb3" : isError ? "#ffb8bd" : "#ffc66d" }}>{value.status || "unknown"}{value.version ? ` · ${value.version}` : ""}</p>{value.error && <p style={{ ...mutedStyle, margin: "5px 0 0", color: "#ffb8bd" }}>{value.error}</p>}{value.fix && <p style={{ ...mutedStyle, margin: "5px 0 0" }}>Fix: {value.fix}</p>}</div>; })}</div>}
-      </section>
-
-      <footer><span><span className="brand-mark small"><i /><i /><i /></span> ClassBridge</span><span>LOCAL API · no classroom media leaves this device</span><span>⌘ <small>SHORTCUTS</small></span></footer>
+      <section style={{ ...panel, marginTop: 14 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}><div><p style={muted}>RUNTIME STATUS</p><h2>Backend health and model readiness</h2></div><button type="button" onClick={() => { void loadHealth(); void loadSoundStatus(); }} style={buttonStyle}>Refresh</button></div>{healthState === "loading" && <p style={muted}>Checking {API}/api/health…</p>}{healthState === "ready" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 9 }}>{modelEntries.map(([name, value]) => <div key={name} style={{ border: "1px solid #202a3a", borderRadius: 9, padding: 11 }}><strong>{name}</strong><p style={{ ...muted, margin: "7px 0 0", color: value.status === "loaded" ? "#a8efb3" : value.status === "error" ? "#ffb8bd" : "#ffd27a" }}>{value.status || "unknown"}{value.version ? ` · ${value.version}` : ""}</p>{value.error && <p style={{ ...muted, color: "#ffb8bd" }}>{value.error}</p>}</div>)}</div>}</section>
+      <footer style={{ display: "flex", gap: 18, flexWrap: "wrap", color: "#8995a6", fontSize: 12, padding: "24px 0" }}><span>ClassBridge</span><span>Local API · no classroom media leaves this device</span><span>Keyboard-friendly controls</span></footer>
     </main>
   );
 }
