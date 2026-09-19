@@ -1,9 +1,11 @@
 [
-  {"id":"red_beaker","keywords":["red beaker","beaker"],"answer":"The red beaker is on the front lab bench, 2 meters to your left."},
-  {"id":"velocity","keywords":["velocity","speed equation","v = d over t"],"answer":"Velocity is displacement over time, v = d over t."},
+  {"id":"red_beaker","keywords":["red beaker","beaker"],"answer":"On the front lab bench, 2 meters to your left"},
+  {"id":"velocity","keywords":["velocity","speed equation","v equals d over t"],"answer":"Displacement over time, v equals d over t"},
   {"id":"mitochondria","keywords":["mitochondria","mitochondrion"],"answer":"Mitochondria make usable energy for the cell."},
   {"id":"homework","keywords":["homework","assignment"],"answer":"The homework is to complete the practice questions and bring them to the next class."},
   {"id":"page_42","keywords":["page 42","page forty two","chapter page"],"answer":"The worked example is on page 42."},
+  {"id":"fire_alarm","keywords":["fire alarm","fire drill","alarm"],"answer":"The fire alarm means leave by the nearest safe exit and follow the teacher's instructions."},
+  {"id":"bell","keywords":["bell","class bell"],"answer":"The bell marks the class transition; wait for the teacher's direction."},
   {"id":"photosynthesis","keywords":["photosynthesis"],"answer":"Photosynthesis uses light energy to help plants make glucose."},
   {"id":"newton_first_law","keywords":["newton first law","first law","inertia"],"answer":"Newton's first law says an object stays at rest or in uniform motion unless a net force acts on it."},
   {"id":"gravity","keywords":["gravity","gravitational force"],"answer":"Gravity is the attractive force between masses."},
@@ -21,7 +23,7 @@
   {"id":"water_cycle","keywords":["water cycle","evaporation"],"answer":"The water cycle moves water through evaporation, condensation, precipitation, and collection."},
   {"id":"hypothesis","keywords":["hypothesis","hypotheses"],"answer":"A hypothesis is a testable explanation or prediction."},
   {"id":"control_variable","keywords":["control variable","controlled variable"],"answer":"A control variable is kept constant so the tested variable can be compared fairly."},
-  {"id":"pH_neutral","keywords":["neutral ph","ph 7","ph seven"],"answer":"A solution with pH 7 is neutral at room temperature."},
+  {"id":"ph_neutral","keywords":["neutral ph","ph 7","ph seven"],"answer":"A solution with pH 7 is neutral at room temperature."},
   {"id":"sound_wave","keywords":["sound wave","sound waves"],"answer":"Sound is a mechanical wave that needs a medium to travel."},
   {"id":"study_break","keywords":["study break","break"],"answer":"A short, planned study break can help you return with focused attention."}
 ]

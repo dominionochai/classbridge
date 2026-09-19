@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import board_ocr, captions, describe, lecture, qa, sign_in, sound_alerts, tts
+from routers import board_ocr, captions, describe, lecture, qa, sign_in, sound_alerts, tts
 
 logging.basicConfig(level=logging.INFO)
 
