@@ -1,7 +1,8 @@
-"""Regression tests for ClassBridge backend. Run: cd backend && python -m pytest -q"""
+"""Regression and Lecture Copilot endpoint tests.
+Run: cd backend && python -m pytest -q
+"""
 import sys
 from pathlib import Path
-from types import SimpleNamespace as P
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,18 +18,18 @@ def test_app_boots_and_health_ok():
     assert client.get("/api/health").json()["status"] == "ok"
 
 
-def test_all_eleven_routes_registered():
-    assert len(main.app.openapi()["paths"]) == 11
+def test_all_routes_registered():
+    assert len(main.app.openapi()["paths"]) == 15
 
 
 def test_qa_exact_match():
-    d = client.post("/api/qa", json={"question": "Where is the red beaker?"}).json()["data"]
-    assert d["matched_fact"] == "red_beaker"
+    data = client.post("/api/qa", json={"question": "Where is the red beaker?"}).json()["data"]
+    assert data["matched_fact"] == "red_beaker"
 
 
 def test_qa_no_substring_false_positives():
-    for q in ("What is the meaning of life?", "The alarming news", "belligerent"):
-        assert client.post("/api/qa", json={"question": q}).json()["data"]["matched_fact"] is None
+    for question in ("What is the meaning of life?", "The alarming news", "belligerent"):
+        assert client.post("/api/qa", json={"question": question}).json()["data"]["matched_fact"] is None
 
 
 def test_qa_plural_and_longest_match():
@@ -49,8 +50,8 @@ def test_multiword_sign_beats_parts():
 
 
 def test_vocab_gap_reports_captions_only():
-    r = translate_segment("quantum entanglement phenomenon")
-    assert r["captions_only"] and r["fallback_reason"] == "vocab_gap"
+    result = translate_segment("quantum entanglement phenomenon")
+    assert result["captions_only"] and result["fallback_reason"] == "vocab_gap"
 
 
 def test_empty_text_is_safe():
@@ -66,5 +67,23 @@ def test_lecture_rejects_blank_text():
 
 
 def test_vocab_is_150_unique():
-    ids = [e["id"] for e in client.get("/api/lecture/vocab").json()]
+    ids = [entry["id"] for entry in client.get("/api/lecture/vocab").json()]
     assert len(ids) == 150 and len(set(ids)) == 150
+
+
+def test_lecture_ingest_caption_and_notes_use_fallback():
+    ingest = client.post("/api/lecture/ingest", json={"text_chunk": "Um, photosynthesis turns light into chemical energy.", "timestamp": 1.5})
+    assert ingest.status_code == 200
+    transcript = ingest.json()["data"]["transcript"]
+    caption = client.post("/api/lecture/caption", json={"transcript": transcript}).json()
+    notes = client.post("/api/lecture/notes", json={"transcript": transcript}).json()
+    assert caption["source"] == "heuristic"
+    assert "photosynthesis" in notes["data"]["terms"]
+    assert "Um" not in caption["data"]["caption"]
+
+
+def test_lecture_explain_accepts_question_and_context():
+    result = client.post("/api/lecture/explain", json={"question": "What is photosynthesis?", "lecture_context": "Photosynthesis turns light into chemical energy."}).json()
+    assert result["ok"] is True
+    assert result["source"] == "heuristic"
+    assert "simple terms" in result["data"]["answer"]
