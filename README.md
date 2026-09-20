@@ -1,54 +1,62 @@
 # ClassBridge
 
-ClassBridge is an accessibility workspace for classroom media. It presents live captions, vocabulary-backed signing, board text, image descriptions, sound alerts, text-to-speech, and classroom questions through one browser interface.
+ClassBridge is one accessibility copilot for the classroom: it keeps the lesson understandable when a student cannot access the room in the usual way.
+
+> we don't translate the classroom, we re-explain it
+
+## One copilot, three journeys
+
+- **Deaf or hard of hearing:** smart captions, sign-aware vocabulary, and sound alerts.
+- **Blind or low vision:** scene descriptions and board text read aloud.
+- **Neurodegenerative conditions:** lecture copilot, personal voice bank, and future gaze/blink/EEG input.
+
+## Features
+
+Live captioning with graceful heuristic fallback, board OCR, scene description, sound-event alerts, lecture chunks with auto-notes and click-to-explain, and an honest voice-bank enrollment seam. The voice-bank demo returns text only; it never fabricates audio.
 
 ## Architecture
 
-The application uses a FastAPI service layer and a Next.js + TypeScript frontend.
+FastAPI backend + Next.js frontend. Routes are small adapters around optional local models; when a model is missing, the API reports its fallback instead of blocking the classroom. The frontend is a browser-first demo with a consistent accessible dark interface.
 
-```text
-Browser / Next.js dashboard
-          |
-          | JSON and multipart HTTP
-          v
-FastAPI routes and local model adapters
-          |
-          +-- captions, signing, OCR, image description
-          +-- sound alerts, Q&A, TTS, health
+## Quickstart
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
 ```
 
-The frontend is under `frontend/`. The FastAPI application and route modules are under `backend/`. Signing vocabulary is kept in `backend/signing/vocab.json`, with matching logic in `backend/signing/sign_engine.py`. The API returns explicit fallback or error information when a model asset is unavailable.
+In a second terminal:
 
-## Endpoint coverage
+```bash
+cd frontend
+npm ci
+npm run dev
+```
 
-| Capability | Method and endpoint | Frontend control |
-| --- | --- | --- |
-| Runtime health | `GET /api/health` | Runtime status |
-| Lecture segmentation and sign matching | `POST /api/lecture` | Lecture pipeline |
-| Captions | `POST /api/captions` | Captions input |
-| Scene description | `POST /api/describe` | Scene context |
-| Board OCR | `POST /api/board-ocr` | Board reader |
-| Sound alerts | `GET` or `POST /api/sound-alerts` | Sound environment |
-| Voice Q&A | `POST /api/qa` | Blind voice Q&A |
-| Sign-in recognition | `POST /api/sign-in` | Deaf sign-in |
-| Text-to-speech | `POST /api/tts` | Voice output and OCR repeat |
+Open `http://localhost:3000/lecture` or `http://localhost:3000/voicebank`.
 
-A detailed mapping of visible controls is in [docs/demo-coverage.md](docs/demo-coverage.md). The static demo pointer is [`demo/index.html`](demo/index.html).
+## Tests and build
 
-## Setup notes
+```bash
+cd backend && python -m pytest -q
+cd frontend && npx tsc --noEmit && npx next build
+```
 
-Prerequisites are Python 3.11 or newer, Node.js 20 or newer, and npm.
+## Endpoint table
 
-1. Create and activate a Python virtual environment.
-2. Install API dependencies with `python -m pip install -r backend/requirements.txt`.
-3. Copy `backend/.env.example` to `backend/.env` and supply any local model settings required by the selected adapters.
-4. Install frontend dependencies with `cd frontend` followed by `npm install`.
-5. Start the FastAPI service and Next.js development server using the included platform-specific scripts, or start each application with its normal development command.
-6. Set `NEXT_PUBLIC_API_URL` when the frontend should call an API address other than its local default.
+| Capability | Method | Endpoint |
+|---|---:|---|
+| Health | GET | `/api/health` |
+| Lecture ingest/caption/notes/explain | POST | `/api/lecture/ingest`, `/api/lecture/caption`, `/api/lecture/notes`, `/api/lecture/explain` |
+| Voice enrollment | POST | `/api/voicebank/enroll` |
+| Voice fallback speech | POST | `/api/voicebank/speak` |
+| Voice enrollment status | GET | `/api/voicebank/{enrollment_id}` |
+| Captions, board OCR, descriptions, alerts, Q&A, TTS, sign-in | GET/POST | See each route module under `backend/routes/` |
 
-The API can return explicit fallback responses when model assets or credentials are absent. Review the applicable model and runtime licenses before distribution. The original scaffold is MIT licensed; model and runtime assets remain subject to their respective licenses.
+## Demo paths
 
-## Documentation
-
-- [Demo coverage](docs/demo-coverage.md)
-- [Backend notes](backend/README.md)
+- `/lecture` — ten-beat “How neurons fire” lesson with important-moment beats.
+- `/voicebank` — enroll a base64 sample or sample name, then see the labeled text-only fallback.
+- `docs/pitch.md` — product story and mocked-demo progression.
+- `docs/roadmap.md` — built versus next.
