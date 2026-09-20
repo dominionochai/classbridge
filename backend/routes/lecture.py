@@ -12,7 +12,7 @@ import tempfile
 from collections import Counter
 from typing import Any
 
-from fastapi import APIResponse, APIRouter, Request
+from fastapi import APIRouter, Request
 
 from signing.sign_engine import get_vocabulary, translate_segment
 from .utils import model_error_response, model_response
@@ -81,17 +81,11 @@ def _sentence_parts(text: str) -> list[str]:
 
 def _clean_transcript(text: str) -> str:
     cleaned = re.sub(r"\b(?:um+|uh+|erm|you know|like)\b[,.]?", "", text, flags=re.I)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,")
-    return cleaned
+    return re.sub(r"\s+", " ", cleaned).strip(" ,")
 
 
 def _terms(text: str) -> list[str]:
-    stop_words = {
-        "about", "after", "again", "could", "first", "from", "have", "into",
-        "just", "more", "most", "other", "should", "that", "their", "there",
-        "these", "they", "this", "those", "using", "what", "when", "where",
-        "which", "with", "would", "your",
-    }
+    stop_words = {"about", "after", "again", "could", "first", "from", "have", "into", "just", "more", "most", "other", "should", "that", "their", "there", "these", "they", "this", "those", "using", "what", "when", "where", "which", "with", "would", "your"}
     words = re.findall(r"[A-Za-z][A-Za-z-]{4,}", text.lower())
     counts = Counter(word for word in words if word not in stop_words)
     return [word for word, _count in counts.most_common(6)]
@@ -108,18 +102,12 @@ def _key_points(text: str) -> list[str]:
 
 
 def _action_items(text: str) -> list[str]:
-    items = []
-    for sentence in _sentence_parts(_clean_transcript(text)):
-        if re.search(r"\b(?:should|must|need to|remember to|next|try to|action)\b", sentence, re.I):
-            items.append(sentence)
-    return items[:5]
+    return [sentence for sentence in _sentence_parts(_clean_transcript(text)) if re.search(r"\b(?:should|must|need to|remember to|next|try to|action)\b", sentence, re.I)][:5]
 
 
 def _copilot_data(text: str) -> dict[str, Any]:
     cleaned = _clean_transcript(text)
-    points = _key_points(cleaned)
-    terms = _terms(cleaned)
-    return {"transcript": cleaned, "key_points": points, "terms": terms, "action_items": _action_items(cleaned)}
+    return {"transcript": cleaned, "key_points": _key_points(cleaned), "terms": _terms(cleaned), "action_items": _action_items(cleaned)}
 
 
 def _lecture_response(text: str) -> dict[str, Any]:
@@ -131,12 +119,10 @@ def _lecture_response(text: str) -> dict[str, Any]:
 
 
 def _simple_explanation(question: str, context: str) -> dict[str, Any]:
-    cleaned_context = _clean_transcript(context)
-    points = _key_points(cleaned_context)
+    points = _key_points(context)
     focus = _terms(question)
     if points:
-        anchor = points[0]
-        answer = f"In simple terms: {anchor}"
+        answer = f"In simple terms: {points[0]}"
         if focus:
             answer += f" The idea to focus on is {focus[0]}: connect it to that main point."
     else:
@@ -166,16 +152,7 @@ def _lecture_segments(text: str) -> list[dict[str, Any]]:
     segments: list[dict[str, Any]] = []
     for part in _sentence_parts(text):
         translation = translate_segment(part)
-        segments.append({
-            "text": part,
-            "sign_ids": translation["sign_ids"],
-            "sign_available": bool(translation["sign_ids"]),
-            "fallback_reason": translation["fallback_reason"],
-            "captions_only": translation["captions_only"],
-            "coverage_pct": translation["coverage_pct"],
-        })
-    overall = round(sum(item["coverage_pct"] for item in segments) / len(segments), 2) if segments else 0.0
-    signed = sum(1 for item in segments if item["sign_available"])
+        segments.append({"text": part, "sign_ids": translation["sign_ids"], "sign_available": bool(translation["sign_ids"]), "fallback_reason": translation["fallback_reason"], "captions_only": translation["captions_only"], "coverage_pct": translation["coverage_pct"]})
     return segments
 
 
@@ -254,5 +231,4 @@ async def lecture_explain(request: Request) -> dict[str, Any]:
     context = _read_string(payload, "lecture_context", "context", "transcript")
     if not question:
         return _json_payload_error("question or concept must be a non-empty string")
-    result = _simple_explanation(question, context)
-    return {"ok": True, "source": "heuristic", "data": result}
+    return {"ok": True, "source": "heuristic", "data": _simple_explanation(question, context)}
