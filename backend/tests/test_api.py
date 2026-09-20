@@ -1,5 +1,4 @@
-"""Regression tests for ClassBridge backend.
-Run: cd backend && python -m pytest -q"""
+"""Regression tests for ClassBridge backend. Run: cd backend && python -m pytest -q"""
 import sys
 from pathlib import Path
 from types import SimpleNamespace as P
